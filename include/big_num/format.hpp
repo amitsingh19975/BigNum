@@ -1,6 +1,7 @@
 #ifndef DARK_BIG_NUM_FORMAT_HPP
 #define DARK_BIG_NUM_FORMAT_HPP
 
+#include "type_traits.hpp"
 #include "basic_integer.hpp"
 #include <format>
 

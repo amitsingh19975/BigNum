@@ -14,6 +14,7 @@
 #include <vector>
 #include <array>
 #include <expected>
+#include "big_num/bitwise.hpp"
 #include "big_num/ntt.hpp"
 #include "block_info.hpp"
 #include "utils.hpp"
@@ -57,7 +58,8 @@ namespace dark {
 		ExpectingDec,
 		Overflow,
 		Underflow,
-		SizeMismatch
+		SizeMismatch,
+		CannotResize
 	};
 	
 	enum class MulKind {
@@ -87,6 +89,7 @@ namespace dark {
 			case BigNumError::Overflow: return "Overflow";
 			case BigNumError::Underflow: return "Underflow";
 			case BigNumError::SizeMismatch: return "SizeMismatch";
+			case BigNumError::CannotResize: return "CannotResize";
 
 		}		
 	}
@@ -148,6 +151,45 @@ namespace dark::internal {
 			swap(*this, *temp);
 		}
 
+		template <std::integral I>
+			requires (IsSigned && std::numeric_limits<I>::is_signed)
+		constexpr BasicInteger(I num, Radix radix = Radix::None) {
+			auto temp = from(num, radix);
+			if (!temp) {
+				throw std::runtime_error(temp.error());
+			}
+
+			swap(*this, *temp);
+		}
+
+		constexpr BasicInteger(BasicInteger<Bits, IsSigned, !AllowOverflow>&& other) noexcept
+			: m_data(std::move(other.m_data))
+			, m_bits(other.m_bits)
+			, m_flags(other.m_flags)	
+		{
+			if constexpr (IsFixed) {
+				std::move(other.begin(), other.end(), begin());
+			} else {
+				m_data = std::move(other.m_data);	
+			}
+		}
+
+		constexpr BasicInteger& operator=(BasicInteger<Bits, IsSigned, !AllowOverflow>&& other) noexcept {
+			swap(*this, other);
+		}
+
+		constexpr BasicInteger(BasicInteger<Bits, IsSigned, !AllowOverflow> const& other) noexcept(IsFixed)
+			: m_data(other.m_data)
+			, m_bits(other.m_bits)
+			, m_flags(other.m_flags)	
+		{
+		}
+
+		constexpr BasicInteger& operator=(BasicInteger<Bits, IsSigned, !AllowOverflow> const& other) noexcept {
+			auto temp = BasicInteger(other);
+			swap(*this, temp);
+		}
+	
 		constexpr auto is_neg() const noexcept -> bool {
 			if constexpr (!IsSigned) return false;
 			else return m_flags & BigNumFlag::Neg;
@@ -191,6 +233,8 @@ namespace dark::internal {
 				if (is_neg) return std::unexpected("Expecting unsigned number but found a negitve number.");
 			}
 
+			std::string temp;
+
 
 			num = num.substr(sign_end);
 
@@ -206,6 +250,10 @@ namespace dark::internal {
 			auto [infered_radix, num_start] = infer_result.value();
 		
 			num = utils::trim_leading_zero(num.substr(num_start));
+			if (num.contains('_')) {
+				temp = sanitize_number(num);
+				num = temp;
+			}
 			auto validate_result = validate_digits(num, infered_radix);
 			if (!validate_result.has_value()) return std::unexpected(std::move(validate_result.error()));
 
@@ -396,7 +444,7 @@ namespace dark::internal {
 			}
 		}
 
-		std::string to_str(Radix radix, bool with_prefix = false) const {
+		std::string to_str(Radix radix = Radix::Dec, bool with_prefix = false) const {
 			std::string s;
 
 			if (size() == 0) return "0";
@@ -459,6 +507,10 @@ namespace dark::internal {
 			return s;
 		}
 
+		std::string to_bin(bool prefix = false) const { return to_str(Radix::Binary, prefix); }
+		std::string to_oct(bool prefix = false) const { return to_str(Radix::Octal, prefix); }
+		std::string to_hex(bool prefix = false) const { return to_str(Radix::Hex, prefix); }
+
 		constexpr auto operator==(BasicInteger const& other) const noexcept -> bool {
 			if (other.is_neg() != is_neg()) return false;
 			if (other.size() != size()) return false;
@@ -467,6 +519,48 @@ namespace dark::internal {
 		
 		constexpr auto operator!=(BasicInteger const& other) const noexcept -> bool {
 			return !(*this == other);
+		}
+
+		friend constexpr auto operator==(BasicInteger const& lhs, std::string_view s) -> bool {
+			auto rhs = BasicInteger(s); 
+			return lhs == rhs;
+		}
+
+		friend constexpr auto operator==(std::string_view s, BasicInteger const& rhs) -> bool {
+			return (rhs == s);
+		}
+
+		friend constexpr auto operator!=(BasicInteger const& lhs, std::string_view s) -> bool {
+			return !(lhs == s);
+		}
+
+		friend constexpr auto operator!=(std::string_view s, BasicInteger const& rhs) -> bool {
+			return !(rhs == s);
+		}
+
+		template <std::integral I>
+			requires (IsSigned && std::numeric_limits<I>::is_signed)
+		friend constexpr auto operator==(BasicInteger const& lhs, I s) -> bool {
+			auto rhs = BasicInteger(s); 
+			return lhs == rhs;
+		}
+
+		template <std::integral I>
+			requires (IsSigned && std::numeric_limits<I>::is_signed)
+		friend constexpr auto operator==(I s, BasicInteger const& rhs) -> bool {
+			return (rhs == s);
+		}
+
+		template <std::integral I>
+			requires (IsSigned && std::numeric_limits<I>::is_signed)
+		friend constexpr auto operator!=(BasicInteger const& lhs, I s) -> bool {
+			return !(lhs == s);
+		}
+
+		template <std::integral I>
+			requires (IsSigned && std::numeric_limits<I>::is_signed)
+		friend constexpr auto operator!=(I s, BasicInteger const& rhs) -> bool {
+			return !(rhs == s);
 		}
 
 		constexpr auto operator<(BasicInteger const& other) const noexcept -> bool {
@@ -495,13 +589,71 @@ namespace dark::internal {
 			return std::equal(begin(), end(), other.begin(), std::greater_equal<>{});
 		}
 
+		constexpr auto shift_left(std::size_t shift, bool should_extend = false) const noexcept(IsFixed) -> std::expected<BasicInteger, BigNumError> {
+			auto temp = *this;
+			auto e = shift_left_helper(temp, shift, should_extend);
+			if (!e) return std::unexpected(e.error());
+			return temp;
+		}
+		
+		constexpr auto shift_left_mut(std::size_t shift, bool should_extend = false) noexcept -> std::expected<void, BigNumError> {
+			auto e = shift_right_helper(*this, shift, should_extend);
+			if (!e) return std::unexpected(e.error());
+			return {};
+		}
+
+		constexpr auto shift_right(std::size_t shift) const noexcept(IsFixed) -> std::expected<BasicInteger, BigNumError> {
+			auto temp = *this;
+			auto e = shift_right_helper(temp, shift);
+			if (!e) return std::unexpected(e.error());
+			return temp;
+		}
+		
+		constexpr auto shift_right_mut(std::size_t shift) noexcept -> std::expected<void, BigNumError> {
+			auto e = shift_right_helper(*this, shift);
+			if (!e) return std::unexpected(e.error());
+			return {};
+		}
+
+		template <std::integral T>
+			requires (!std::numeric_limits<T>::is_signed)
+		constexpr auto operator<<(T shift) const -> BasicInteger {
+			auto e = shift_left(shift);
+			if (!e) throw std::runtime_error(std::string(to_string(e.error())));
+			return *e;
+		}
+
+		template <std::integral T>
+			requires (!std::numeric_limits<T>::is_signed)
+		constexpr auto operator<<=(T shift) -> BasicInteger& {
+			auto e = shift_left_mut(shift);
+			if (!e) throw std::runtime_error(std::string(to_string(e.error())));
+			return *this;
+		}
+
+		template <std::integral T>
+			requires (!std::numeric_limits<T>::is_signed)
+		constexpr auto operator>>(T shift) const -> BasicInteger {
+			auto e = shift_right(shift);
+			if (!e) throw std::runtime_error(std::string(to_string(e.error())));
+			return *e;
+		}
+
+		template <std::integral T>
+			requires (!std::numeric_limits<T>::is_signed)
+		constexpr auto operator>>=(T shift) -> BasicInteger& {
+			auto e = shift_right_mut(shift);
+			if (!e) throw std::runtime_error(std::string(to_string(e.error())));
+			return *this;
+		}
+
 		constexpr auto abs_mut() noexcept -> void {
 			set_is_neg(false);
 		}
 
 		[[nodiscard]] constexpr auto abs() const noexcept(IsFixed) -> BasicInteger {
 			auto temp = *this;
-			temp.set_is_neg(false);
+			temp.abs_mut();
 			return temp;
 		}
 
@@ -512,7 +664,39 @@ namespace dark::internal {
 			swap(lhs.m_flags, rhs.m_flags);
 		}
 	private:
+		static constexpr auto shift_left_helper(
+			BasicInteger& out,
+			std::size_t shift,
+			bool should_extend
+		) noexcept -> std::expected<void, BigNumError> {
+			if (should_extend) {
+				auto const bits = out.bits();
+				auto const diff_bits = shift;
+				auto const diff_size = (diff_bits + BlockInfo::total_bits - 1) / BlockInfo::total_bits;
+				if constexpr (IsFixed) {
+					if (diff_size != 0) {
+						return std::unexpected(BigNumError::CannotResize);
+					}
+				} else {
+					out.m_data.resize(out.size() + diff_size, 0);
+				}
+			}
 
+			auto const bits = out.bits();
+			logical_left_shift(out.data(), out.size(), shift);
+			out.trim_zero();
+			return {};
+		}
+
+		static constexpr auto shift_right_helper(
+			BasicInteger& out,
+			std::size_t shift
+		) noexcept -> std::expected<void, BigNumError> {
+			auto const bits = out.bits();
+			logical_right_shift(out.data(), out.size(), shift);
+			out.trim_zero();
+			return {};
+		}
 		constexpr auto abs_less(BasicInteger const& other) const noexcept -> bool {
 			if (size() < other.size()) return true;
 			else if (size() > other.size()) return false;
@@ -908,6 +1092,18 @@ namespace dark::internal {
 			
 			return std::unexpected(std::format("invalid {} digit '{}'", to_string(radix), *pos));
 			
+		}
+
+		inline static std::string sanitize_number(std::string_view num) {
+			auto res = std::string();
+			res.reserve(num.size());
+
+			for (auto c: num) {
+				if (c == '_') continue;
+				res.push_back(c);
+			}
+
+			return res;
 		}
 
 		constexpr auto toggle_flag(bool s, BigNumFlag::type flag) {
