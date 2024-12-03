@@ -846,7 +846,7 @@ namespace dark::internal {
 			BasicInteger const* b
 		) noexcept -> std::expected<void, BigNumError> {
 			if constexpr (IsSigned) {
-				if (a->is_neg() ^ b->is_neg()) return add_impl(res, a, b);
+				if (a->is_neg() == b->is_neg()) return add_impl(res, a, b);
 			}
 
 			if constexpr (!IsFixed) {
