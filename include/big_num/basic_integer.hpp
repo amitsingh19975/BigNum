@@ -65,7 +65,6 @@ namespace dark {
 
 	enum class DivKind {
 		Auto,
-		RestoringDiv,
 		LongDiv,
 		NewtonRaphson,
 		LargeInteger
@@ -1035,8 +1034,6 @@ namespace dark::internal {
 			switch(kind) {
 				case DivKind::LongDiv:
 					return long_div(num, den, quot, rem);	
-				case DivKind::RestoringDiv:
-					return restoring_div(num, den, quot, rem);
 				default: break;
 			}
 			return {};
