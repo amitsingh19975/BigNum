@@ -2,6 +2,7 @@
 #define DARK_BIG_NUM_BASIC_INTEGER_HPP
 
 #include <algorithm>
+#include <bit>
 #include <cassert>
 #include <concepts>
 #include <cstddef>
@@ -261,7 +262,7 @@ namespace dark::internal {
 			auto bits = std::size_t{};
 
 			if (!result.empty()) {
-				auto c = utils::count_used_bits(result.back());
+				auto c = static_cast<std::size_t>(std::bit_width(result.back()));
 				bits = (result.size() - 1) * BlockInfo::total_bits + c;
 			}
 			res.m_bits = bits;
@@ -543,7 +544,7 @@ namespace dark::internal {
 
 		constexpr auto operator==(BasicInteger const& other) const noexcept -> bool {
 			if (other.is_neg() != is_neg()) return false;
-			if (other.size() != size()) return false;
+			if (other.bits() != bits()) return false;
 			return std::equal(begin(), end(), other.begin());
 		}
 		
@@ -600,22 +601,22 @@ namespace dark::internal {
 		
 		constexpr auto operator<=(BasicInteger const& other) const noexcept -> bool {
 			if (is_neg() && !other.is_neg()) return true;
-			else if (size() < other.size()) return true;
-			else if (size() > other.size()) return false;
+			else if (bits() < other.bits()) return true;
+			else if (bits() > other.bits()) return false;
 			return compare(other, std::less_equal<>{});
 		}
 		
 		constexpr auto operator>(BasicInteger const& other) const noexcept -> bool {
 			if (!is_neg() && other.is_neg()) return true;
-			else if (size() > other.size()) return true;
-			else if (size() < other.size()) return false;
+			else if (bits() > other.bits()) return true;
+			else if (bits() < other.bits()) return false;
 			return compare(other, std::greater<>{});
 		}
 
 		constexpr auto operator>=(BasicInteger const& other) const noexcept -> bool {
 			if (!is_neg() && other.is_neg()) return true;
-			else if (size() > other.size()) return true;
-			else if (size() < other.size()) return false;
+			else if (bits() > other.bits()) return true;
+			else if (bits() < other.bits()) return false;
 			return compare(other, std::greater_equal<>{});
 		}
 
@@ -757,17 +758,23 @@ namespace dark::internal {
 			return {};
 		}
 		
-		constexpr auto compare(BasicInteger const& other, auto&& fn) const noexcept -> bool {
-			assert(size() == other.size());
-			if (size() == 0) return true;
-			auto const l = m_data[size() - 1];
-			auto const r = other.m_data[size() - 1];
+		template <typename Fn>
+		constexpr auto compare(BasicInteger const& other, Fn fn) const noexcept -> bool {
+			assert(bits() == other.bits());
+			auto const sz = size();
+			auto l = block_t{};
+			auto r = block_t{};
+			for (auto i = sz; i > 0; --i) {
+				l = m_data[i - 1];
+				r = other.m_data[i - 1];
+				if (l != r) break;;
+			}
 			return fn(l, r);
 		}
 		
 		constexpr auto abs_less(BasicInteger const& other) const noexcept -> bool {
-			if (size() < other.size()) return true;
-			else if (size() > other.size()) return false;
+			if (bits() < other.bits()) return true;
+			else if (bits() > other.bits()) return false;
 			return compare(other, std::less<>{});
 		} 
 
@@ -845,7 +852,7 @@ namespace dark::internal {
 			BasicInteger const* b
 		) noexcept -> std::expected<void, BigNumError> {
 			if constexpr (IsSigned) {
-				if (a->is_neg() == b->is_neg()) return add_impl(res, a, b);
+				if (a->is_neg() != b->is_neg()) return add_impl(res, a, b);
 			}
 
 			if constexpr (!IsFixed) {
@@ -889,7 +896,6 @@ namespace dark::internal {
 					lhs[i] = acc;
 					borrow = br;
 				}
-
 				res->trim_zero();
 			} else {
 				auto av = static_cast<block_acc_t>(a->m_data[0]);
@@ -1048,8 +1054,8 @@ namespace dark::internal {
 				m_bits = 0;
 				return;
 			}
-			auto bits = utils::count_used_bits(m_data.back());
-			m_bits = (size() - 1) * BlockInfo::total_bits * 8 + bits;
+			auto bits = static_cast<std::size_t>(std::bit_width(m_data.back()));
+			m_bits = (size() - 1) * BlockInfo::total_bits + bits;
 		}
 
 

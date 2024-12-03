@@ -107,18 +107,6 @@ namespace dark::utils {
 
 		return c;
 	}
-
-	inline static constexpr auto count_used_bits(internal::BlockInfo::type block) noexcept -> std::size_t {
-		auto res = std::size_t{};
-
-		while (block) {
-			++res;
-			block >>= 1;
-		}
-
-		return res;
-	}
-
 } // namespace dark::utils
 
 #endif // DARK_BIG_NUM_UTILS_HPP
