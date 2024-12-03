@@ -15,10 +15,19 @@ namespace dark {
 
 			template <std::size_t W, bool S, bool A>
 			struct is_basic_integer<BasicInteger<W, S, A>>: std::true_type {};
+
+			template <typename T>
+			struct is_signed_basic_integer: std::false_type{};
+
+			template <std::size_t W, bool A>
+			struct is_signed_basic_integer<BasicInteger<W, true, A>>: std::true_type {};
 		}
 
 		template <typename T>
 		concept is_basic_integer = detail::is_basic_integer<std::decay_t<std::remove_cvref_t<T>>>::value;
+
+		template <typename T>
+		concept is_signed_basic_integer = detail::is_basic_integer<std::decay_t<std::remove_cvref_t<T>>>::value;
 	}
 
 } // namespace dark

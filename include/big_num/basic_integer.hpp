@@ -2,23 +2,30 @@
 #define DARK_BIG_NUM_BASIC_INTEGER_HPP
 
 #include <algorithm>
+#include <cassert>
 #include <concepts>
+#include <cstddef>
+#include <functional>
 #include <limits>
 #include <ostream>
 #include <cstdint>
 #include <format>
+#include <print>
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
 #include <array>
+#include <optional>
 #include <expected>
 #include "big_num/bitwise.hpp"
+#include "big_num/division.hpp"
 #include "big_num/ntt.hpp"
 #include "block_info.hpp"
 #include "utils.hpp"
 #include "mul.hpp"
+#include "error.hpp"
 
 namespace dark {
 	enum class Radix: std::uint8_t {
@@ -49,24 +56,19 @@ namespace dark {
 		}
 	}
 
-	enum class BigNumError {
-		UnknownRadix,
-		RadixPrefixMismatch,
-		ExpectingHex,
-		ExpectingBinary,
-		ExpectingOctal,
-		ExpectingDec,
-		Overflow,
-		Underflow,
-		SizeMismatch,
-		CannotResize
-	};
-	
 	enum class MulKind {
 		Auto,
 		Naive,
 		Karatsuba,
 		NTT
+	};
+
+	enum class DivKind {
+		Auto,
+		RestoringDiv,
+		LongDiv,
+		NewtonRaphson,
+		LargeInteger
 	};
 
 	struct BigNumFlag {
@@ -77,24 +79,6 @@ namespace dark {
 		static constexpr type Underflow = 4;
 		static constexpr type IsSigned = 8;
 	};
-
-	constexpr std::string_view to_string(BigNumError e) noexcept {
-		switch (e) {
-			case BigNumError::UnknownRadix: return "UnknownRadix";
-			case BigNumError::RadixPrefixMismatch: return "RadixPrefixMismatch";
-			case BigNumError::ExpectingHex: return "ExpectingHex";
-			case BigNumError::ExpectingBinary: return "ExpectingBinary";
-			case BigNumError::ExpectingOctal: return "ExpectingOctal";
-			case BigNumError::ExpectingDec: return "ExpectingDec";
-			case BigNumError::Overflow: return "Overflow";
-			case BigNumError::Underflow: return "Underflow";
-			case BigNumError::SizeMismatch: return "SizeMismatch";
-			case BigNumError::CannotResize: return "CannotResize";
-
-		}		
-	}
-
-
 } // namespace dark
 
 namespace dark::internal {
@@ -152,9 +136,8 @@ namespace dark::internal {
 		}
 
 		template <std::integral I>
-			requires (IsSigned && std::numeric_limits<I>::is_signed)
-		constexpr BasicInteger(I num, Radix radix = Radix::None) {
-			auto temp = from(num, radix);
+		constexpr BasicInteger(I num) {
+			auto temp = from(num);
 			if (!temp) {
 				throw std::runtime_error(temp.error());
 			}
@@ -162,30 +145,39 @@ namespace dark::internal {
 			swap(*this, *temp);
 		}
 
-		constexpr BasicInteger(BasicInteger<Bits, IsSigned, !AllowOverflow>&& other) noexcept
+		template <std::size_t W>
+		constexpr BasicInteger(BasicInteger<W, IsSigned, !AllowOverflow>&& other) noexcept
 			: m_data(std::move(other.m_data))
 			, m_bits(other.m_bits)
 			, m_flags(other.m_flags)	
 		{
 			if constexpr (IsFixed) {
-				std::move(other.begin(), other.end(), begin());
+				std::move(other.begin(), other.begin() + size(), begin());
 			} else {
 				m_data = std::move(other.m_data);	
 			}
 		}
 
-		constexpr BasicInteger& operator=(BasicInteger<Bits, IsSigned, !AllowOverflow>&& other) noexcept {
+		template <std::size_t W>
+		constexpr BasicInteger& operator=(BasicInteger<W, IsSigned, !AllowOverflow>&& other) noexcept {
 			swap(*this, other);
 		}
 
-		constexpr BasicInteger(BasicInteger<Bits, IsSigned, !AllowOverflow> const& other) noexcept(IsFixed)
-			: m_data(other.m_data)
-			, m_bits(other.m_bits)
+		template <std::size_t W>
+		constexpr BasicInteger(BasicInteger<W, IsSigned, !AllowOverflow> const& other) noexcept(IsFixed)
+			: m_bits(other.m_bits)
 			, m_flags(other.m_flags)	
 		{
+			if constexpr (IsFixed) {
+				std::move(other.begin(), other.begin() + size(), begin());
+			} else {
+				m_data = other.m_data;	
+			}
+
 		}
 
-		constexpr BasicInteger& operator=(BasicInteger<Bits, IsSigned, !AllowOverflow> const& other) noexcept {
+		template <std::size_t W>
+		constexpr BasicInteger& operator=(BasicInteger<W, IsSigned, !AllowOverflow> const& other) noexcept {
 			auto temp = BasicInteger(other);
 			swap(*this, temp);
 		}
@@ -297,7 +289,7 @@ namespace dark::internal {
 		static auto from(
 			I num
 		) noexcept -> std::expected<BasicInteger, std::string> 
-			requires (IsFixed && sizeof(num) * 8 <= Bits)
+			requires ((IsFixed && sizeof(num) * 8 <= Bits) || !IsFixed)
 		{
 			using type = std::decay_t<std::remove_cvref_t<I>>;
 			using unsigned_type = std::make_unsigned_t<type>;
@@ -339,7 +331,7 @@ namespace dark::internal {
 				num >>= shift;
 			}
 
-			res.set_sign(is_neg);
+			res.set_is_neg(is_neg);
 			return res;
 		}
 
@@ -353,6 +345,13 @@ namespace dark::internal {
 		constexpr const_reverse_iterator rend() const noexcept { return m_data.rend(); }
 
 		constexpr size_type size() const noexcept { return m_data.size(); }
+		constexpr size_type actual_size() const noexcept {
+			auto sz = size();
+			for (; sz > 0; --sz) {
+				if (m_data[sz - 1] != 0) return sz;
+			}
+			return 0;
+		}
 		constexpr size_type bits() const noexcept { return IsFixed ? Bits : m_bits; }
 		constexpr size_type bytes() const noexcept { return bits() / 8; }
 		constexpr pointer data() noexcept { return m_data.data(); }
@@ -369,9 +368,9 @@ namespace dark::internal {
 			return std::unexpected(expect.error());
 		}
 		
-		constexpr auto add_mut(BasicInteger const& other) const noexcept -> std::expected<BasicInteger&, BigNumError> {
+		constexpr auto add_mut(BasicInteger const& other) noexcept -> std::expected<void, BigNumError> {
 			auto expect = add_impl(this, this, &other);
-			if (expect) return *this;
+			if (expect) return {};
 			return std::unexpected(expect.error());
 		}
 
@@ -383,9 +382,9 @@ namespace dark::internal {
 			return std::unexpected(expect.error());
 		}
 
-		constexpr auto sub_mut(BasicInteger const& other) const noexcept -> std::expected<BasicInteger&, BigNumError> {
+		constexpr auto sub_mut(BasicInteger const& other) noexcept -> std::expected<void, BigNumError> {
 			auto expect = sub_impl(this, this, &other);
-			if (expect) return *this;
+			if (expect) return {};
 			return std::unexpected(expect.error());
 		}
 		
@@ -394,6 +393,18 @@ namespace dark::internal {
 			auto expect = mul_impl(&res, this, &other, kind);
 			if (expect) return res;
 			return std::unexpected(expect.error());
+		}
+
+		struct Div {
+			BasicInteger quot;
+			BasicInteger rem;
+		};
+
+		constexpr auto div(BasicInteger const& other, DivKind kind = DivKind::Auto) const noexcept -> std::expected<Div, BigNumError> {
+			auto result = Div{};
+			auto e = div_impl(result.quot, result.rem, *this, other, kind);
+			if (!e) return std::unexpected(e.error());
+			return result;
 		}
 
 		constexpr auto operator+(BasicInteger const& other) const noexcept(AllowOverflow) -> BasicInteger {
@@ -444,11 +455,14 @@ namespace dark::internal {
 			}
 		}
 
-		std::string to_str(Radix radix = Radix::Dec, bool with_prefix = false) const {
+		std::string to_str(Radix radix = Radix::Dec, bool with_prefix = false, std::optional<char> separator = {}) const {
 			std::string s;
 
-			if (size() == 0) return "0";
-
+			if (is_zero()) {
+				s = get_prefix(radix);
+				s += "0";
+				return s;
+			}
 			auto get_digit = [this](auto i) { return m_data[size() - i - 1]; };
 
 			switch (radix) {
@@ -488,13 +502,30 @@ namespace dark::internal {
 						get_digit
 					);
 				} break;
+				default: std::unreachable();
 			}
-
-			while (s.back() == 0) s.pop_back();
-			std::reverse(s.begin(), s.end());
+			while (!s.empty() && s.back() == 0) s.pop_back();
+			if (s.empty()) {
+				s = get_prefix(radix);
+				s += "0";
+				return s;
+			};
 			for (auto& c: s) {
 				c = utils::number_to_hex_char_mapping[static_cast<std::size_t>(c)];
 			}
+
+			if (separator) {
+				auto temp = std::string();
+				auto sep = *separator;
+				temp.reserve(s.size() + s.size() / 3);
+				for (auto i = 0zu; i < s.size(); i += 3) {
+					temp.append(s.substr(i, 3));
+					if (i + 3 < s.size()) temp.push_back(sep);
+				}
+				s = std::move(temp);
+			}
+
+			std::reverse(s.begin(), s.end());
 
 			if (with_prefix) {
 				auto prefix = get_prefix(radix);
@@ -572,21 +603,21 @@ namespace dark::internal {
 			if (is_neg() && !other.is_neg()) return true;
 			else if (size() < other.size()) return true;
 			else if (size() > other.size()) return false;
-			return std::equal(begin(), end(), other.begin(), std::less_equal<>{});
+			return compare(other, std::less_equal<>{});
 		}
 		
 		constexpr auto operator>(BasicInteger const& other) const noexcept -> bool {
 			if (!is_neg() && other.is_neg()) return true;
 			else if (size() > other.size()) return true;
 			else if (size() < other.size()) return false;
-			return std::equal(begin(), end(), other.begin(), std::greater<>{});
+			return compare(other, std::greater<>{});
 		}
 
 		constexpr auto operator>=(BasicInteger const& other) const noexcept -> bool {
 			if (!is_neg() && other.is_neg()) return true;
 			else if (size() > other.size()) return true;
 			else if (size() < other.size()) return false;
-			return std::equal(begin(), end(), other.begin(), std::greater_equal<>{});
+			return compare(other, std::greater_equal<>{});
 		}
 
 		constexpr auto shift_left(std::size_t shift, bool should_extend = false) const noexcept(IsFixed) -> std::expected<BasicInteger, BigNumError> {
@@ -597,7 +628,7 @@ namespace dark::internal {
 		}
 		
 		constexpr auto shift_left_mut(std::size_t shift, bool should_extend = false) noexcept -> std::expected<void, BigNumError> {
-			auto e = shift_right_helper(*this, shift, should_extend);
+			auto e = shift_left_helper(*this, shift, should_extend);
 			if (!e) return std::unexpected(e.error());
 			return {};
 		}
@@ -663,6 +694,39 @@ namespace dark::internal {
 			swap(lhs.m_bits, rhs.m_bits);
 			swap(lhs.m_flags, rhs.m_flags);
 		}
+		
+		constexpr auto is_zero() const noexcept -> bool {
+			if (size() == 0) return true;
+			if (size() == 1) return m_data[0] == 0;
+			
+			return false;
+		}
+
+		constexpr auto set_bit(std::size_t pos, bool flag, bool should_expand = false) noexcept -> void {
+			auto index = pos / BlockInfo::total_bits;
+			if (index >= size()) {
+				if constexpr (IsFixed) {
+					return;
+				} else {
+					if (!should_expand) return;
+					resize(index + 1, 0);
+				}
+			}
+			pos = pos % BlockInfo::total_bits;
+			
+			auto& block = m_data[index];
+			auto bit = block_t{flag};
+			if (flag) block |= (bit << pos);
+			else block &= ~(bit << pos);
+		}
+
+		constexpr auto get_bit(std::size_t pos) const noexcept -> bool {
+			auto index = pos / BlockInfo::total_bits;
+			if (index >= size()) return false;
+			pos = pos % BlockInfo::total_bits;
+			auto block = m_data[index];
+			return (block >> pos) & 1; 
+		}
 	private:
 		static constexpr auto shift_left_helper(
 			BasicInteger& out,
@@ -670,7 +734,6 @@ namespace dark::internal {
 			bool should_extend
 		) noexcept -> std::expected<void, BigNumError> {
 			if (should_extend) {
-				auto const bits = out.bits();
 				auto const diff_bits = shift;
 				auto const diff_size = (diff_bits + BlockInfo::total_bits - 1) / BlockInfo::total_bits;
 				if constexpr (IsFixed) {
@@ -681,8 +744,6 @@ namespace dark::internal {
 					out.m_data.resize(out.size() + diff_size, 0);
 				}
 			}
-
-			auto const bits = out.bits();
 			logical_left_shift(out.data(), out.size(), shift);
 			out.trim_zero();
 			return {};
@@ -692,15 +753,23 @@ namespace dark::internal {
 			BasicInteger& out,
 			std::size_t shift
 		) noexcept -> std::expected<void, BigNumError> {
-			auto const bits = out.bits();
 			logical_right_shift(out.data(), out.size(), shift);
 			out.trim_zero();
 			return {};
 		}
+		
+		constexpr auto compare(BasicInteger const& other, auto&& fn) const noexcept -> bool {
+			assert(size() == other.size());
+			if (size() == 0) return true;
+			auto const l = m_data[size() - 1];
+			auto const r = other.m_data[size() - 1];
+			return fn(l, r);
+		}
+		
 		constexpr auto abs_less(BasicInteger const& other) const noexcept -> bool {
 			if (size() < other.size()) return true;
 			else if (size() > other.size()) return false;
-			return std::equal(begin(), end(), other.begin(), std::less<>{});
+			return compare(other, std::less<>{});
 		} 
 
 		static constexpr auto add_impl(
@@ -939,6 +1008,37 @@ namespace dark::internal {
 
 			res->set_is_neg(a->is_neg() || b->is_neg());
 			res->trim_zero();
+			return {};
+		}
+
+		static constexpr auto div_impl(
+			BasicInteger& quot,
+			BasicInteger& rem,
+			BasicInteger const& num,
+			BasicInteger const& den,
+			DivKind kind
+		) noexcept ->std::expected<void, BigNumError> {
+			if constexpr (IsFixed) {
+				if (quot.size() != num.size()) {
+					return std::unexpected(BigNumError::CannotResize);
+				}
+				if (rem.size() != num.size()) {
+					return std::unexpected(BigNumError::CannotResize);
+				}
+			} else {
+				quot.resize(num.size(), 0);
+				rem.resize(num.size(), 0);
+			}
+			quot.m_bits = num.bits();
+			rem.m_bits = num.bits();
+			
+			switch(kind) {
+				case DivKind::LongDiv:
+					return long_div(num, den, quot, rem);	
+				case DivKind::RestoringDiv:
+					return restoring_div(num, den, quot, rem);
+				default: break;
+			}
 			return {};
 		}
 
