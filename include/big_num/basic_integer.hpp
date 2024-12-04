@@ -83,30 +83,15 @@ namespace dark {
 
 namespace dark::internal {
 
-	template <std::size_t Bits, bool IsSigned = true, bool AllowOverflow = true>
 	class BasicInteger {
 		static constexpr auto naive_threshold = 32zu;
 		static constexpr auto karatsuba_threshold = 1024zu;
-
-		static constexpr auto multiplicationResultSize = [] () -> std::size_t {
-			if (Bits == 0) return 0;
-			if (karatsuba_threshold < Bits) return Bits << 1;
-			return impl::NTT::calculate_max_operands_size(Bits, Bits);
-		}();
 	public:
-
-		static constexpr bool IsFixed = Bits != 0;
-		static constexpr std::size_t Bytes = (Bits + 7) / 8;
 
 		using block_t = typename BlockInfo::type;
 		using block_acc_t = typename BlockInfo::accumulator_t;
 
-		using base_type = std::conditional_t<
-				IsFixed,
-				std::array<block_t, BlockInfo::calculate_blocks_from_bytes(Bytes)>,
-				std::vector<block_t>
-		>;
-
+		using base_type = std::vector<block_t>;
 		using value_type = typename base_type::value_type;
 		using reference = typename base_type::reference;
 		using const_reference = typename base_type::const_reference;
@@ -120,11 +105,11 @@ namespace dark::internal {
 		using difference_type = typename base_type::difference_type;
 
 		constexpr BasicInteger() noexcept = default;
-		constexpr BasicInteger(BasicInteger const&) noexcept(IsFixed) = default;
-		constexpr BasicInteger& operator=(BasicInteger const&) noexcept(IsFixed) = default;
+		constexpr BasicInteger(BasicInteger const&) = default;
+		constexpr BasicInteger& operator=(BasicInteger const&) = default;
 		constexpr BasicInteger(BasicInteger &&) noexcept = default;
 		constexpr BasicInteger& operator=(BasicInteger &&) noexcept = default;
-		constexpr ~BasicInteger() noexcept(IsFixed) = default;
+		constexpr ~BasicInteger() = default;
 
 		constexpr BasicInteger(std::string_view num, Radix radix = Radix::None) {
 			auto temp = from(num, radix);
@@ -145,52 +130,12 @@ namespace dark::internal {
 			swap(*this, *temp);
 		}
 
-		template <std::size_t W>
-		constexpr BasicInteger(BasicInteger<W, IsSigned, !AllowOverflow>&& other) noexcept
-			: m_data(std::move(other.m_data))
-			, m_bits(other.m_bits)
-			, m_flags(other.m_flags)	
-		{
-			if constexpr (IsFixed) {
-				std::move(other.begin(), other.begin() + size(), begin());
-			} else {
-				m_data = std::move(other.m_data);	
-			}
-		}
-
-		template <std::size_t W>
-		constexpr BasicInteger& operator=(BasicInteger<W, IsSigned, !AllowOverflow>&& other) noexcept {
-			swap(*this, other);
-		}
-
-		template <std::size_t W>
-		constexpr BasicInteger(BasicInteger<W, IsSigned, !AllowOverflow> const& other) noexcept(IsFixed)
-			: m_bits(other.m_bits)
-			, m_flags(other.m_flags)	
-		{
-			if constexpr (IsFixed) {
-				std::move(other.begin(), other.begin() + size(), begin());
-			} else {
-				m_data = other.m_data;	
-			}
-
-		}
-
-		template <std::size_t W>
-		constexpr BasicInteger& operator=(BasicInteger<W, IsSigned, !AllowOverflow> const& other) noexcept {
-			auto temp = BasicInteger(other);
-			swap(*this, temp);
-		}
-	
 		constexpr auto is_neg() const noexcept -> bool {
-			if constexpr (!IsSigned) return false;
-			else return m_flags & BigNumFlag::Neg;
+			return m_flags & BigNumFlag::Neg;
 		}
 
 		constexpr auto set_is_neg(bool is_neg) noexcept -> void {
-			if constexpr (IsSigned) { 
-				toggle_flag(is_neg, BigNumFlag::Neg);
-			}
+			toggle_flag(is_neg, BigNumFlag::Neg);
 		}
 		
 		constexpr auto is_overflow() const noexcept -> bool {
@@ -220,10 +165,6 @@ namespace dark::internal {
 			auto sign_result = parse_sign(num);
 			if (!sign_result) return std::unexpected(std::move(sign_result.error()));
 			auto [is_neg, sign_end] = sign_result.value();
-
-			if constexpr (!IsSigned) {
-				if (is_neg) return std::unexpected("Expecting unsigned number but found a negitve number.");
-			}
 
 			std::string temp;
 
@@ -266,17 +207,7 @@ namespace dark::internal {
 				bits = (result.size() - 1) * BlockInfo::total_bits + c;
 			}
 			res.m_bits = bits;
-
-			auto const bytes = bits / 8;
-			if constexpr (IsFixed) {
-				if constexpr (!AllowOverflow) {
-					if (bytes > Bytes) {
-						return std::unexpected(std::format("Bits require to store the number exceed bits allocated: Required({}) > Allocated({})", bytes * 8, Bits));
-					}
-				}
-			} else {
-				res.m_data.resize(result.size(), block_t{});
-			}
+			res.m_data.resize(result.size(), block_t{});
 
 			std::copy_n(result.begin(), res.size(), res.begin());
 			res.set_is_neg(is_neg);
@@ -285,12 +216,9 @@ namespace dark::internal {
 		}
 
 		template <std::integral I>
-			requires (IsSigned && std::numeric_limits<I>::is_signed)
 		static auto from(
 			I num
-		) noexcept -> std::expected<BasicInteger, std::string> 
-			requires ((IsFixed && sizeof(num) * 8 <= Bits) || !IsFixed)
-		{
+		) noexcept -> std::expected<BasicInteger, std::string> {
 			using type = std::decay_t<std::remove_cvref_t<I>>;
 			using unsigned_type = std::make_unsigned_t<type>;
 
@@ -300,15 +228,7 @@ namespace dark::internal {
 			constexpr auto bits = bytes * 8;
 			res.m_bits = bits;
 			
-			if constexpr (IsFixed) {
-				if constexpr (AllowOverflow) {
-					if (Bytes < bytes) {
-						return std::unexpected(std::format("Bits require to store the number exceed bits allocated: Required({}) > Allocated({})", bytes * 8, Bits));
-					}	
-				}		
-			} else {
-				res.m_data.resize(BlockInfo::calculate_blocks_from_bytes(bytes), block_t{});
-			}
+			res.m_data.resize(BlockInfo::calculate_blocks_from_bytes(bytes), block_t{});
 
 			constexpr auto block_bits = BlockInfo::total_bits;
 			bool is_neg{false};
@@ -352,7 +272,7 @@ namespace dark::internal {
 			}
 			return 0;
 		}
-		constexpr size_type bits() const noexcept { return IsFixed ? Bits : m_bits; }
+		constexpr size_type bits() const noexcept { return m_bits; }
 		constexpr size_type bytes() const noexcept { return bits() / 8; }
 		constexpr pointer data() noexcept { return m_data.data(); }
 		constexpr const_pointer data() const noexcept { return m_data.data(); }
@@ -361,98 +281,55 @@ namespace dark::internal {
 			return os << o.to_str(Radix::Hex, true);	
 		}
 
-		constexpr auto add(BasicInteger const& other) const noexcept -> std::expected<BasicInteger, BigNumError> {
+		constexpr auto add(BasicInteger const& other) const noexcept -> BasicInteger {
 			auto res = BasicInteger();
-			auto expect = add_impl(&res, this, &other);
-			if (expect) return res;
-			return std::unexpected(expect.error());
+			add_impl(&res, this, &other);
+			return res;
 		}
 		
-		constexpr auto add_mut(BasicInteger const& other) noexcept -> std::expected<void, BigNumError> {
-			auto expect = add_impl(this, this, &other);
-			if (expect) return {};
-			return std::unexpected(expect.error());
+		constexpr auto add_mut(BasicInteger const& other) noexcept -> void {
+			add_impl(this, this, &other);
 		}
 
 
-		constexpr auto sub(BasicInteger const& other) const noexcept -> std::expected<BasicInteger, BigNumError> {
+		constexpr auto sub(BasicInteger const& other) const noexcept -> BasicInteger {
 			auto res = BasicInteger();
-			auto expect = sub_impl(&res, this, &other);
-			if (expect) return res;
-			return std::unexpected(expect.error());
+			sub_impl(&res, this, &other);
+			return res;
 		}
 
-		constexpr auto sub_mut(BasicInteger const& other) noexcept -> std::expected<void, BigNumError> {
-			auto expect = sub_impl(this, this, &other);
-			if (expect) return {};
-			return std::unexpected(expect.error());
+		constexpr auto sub_mut(BasicInteger const& other) noexcept -> void {
+			sub_impl(this, this, &other);
 		}
 		
-		constexpr auto mul(BasicInteger const& other, MulKind kind = MulKind::Auto) const noexcept -> std::expected<BasicInteger<multiplicationResultSize, IsSigned, AllowOverflow>, BigNumError> {
-			auto res = BasicInteger<multiplicationResultSize, IsSigned, AllowOverflow>();
-			auto expect = mul_impl(&res, this, &other, kind);
-			if (expect) return res;
-			return std::unexpected(expect.error());
+		constexpr auto mul(BasicInteger const& other, MulKind kind = MulKind::Auto) const noexcept -> BasicInteger {
+			auto res = BasicInteger();
+			mul_impl(&res, this, &other, kind);
+			return res;
 		}
 
+		template <typename I>
 		struct Div {
-			BasicInteger quot;
-			BasicInteger rem;
+			I quot;
+			I rem;
 		};
 
-		constexpr auto div(BasicInteger const& other, DivKind kind = DivKind::Auto) const noexcept -> std::expected<Div, BigNumError> {
-			auto result = Div{};
-			auto e = div_impl(result.quot, result.rem, *this, other, kind);
-			if (!e) return std::unexpected(e.error());
+		constexpr auto div(BasicInteger const& other, DivKind kind = DivKind::Auto) const noexcept -> Div<BasicInteger> {
+			auto result = Div<BasicInteger>{};
+			div_impl(result.quot, result.rem, *this, other, kind);
 			return result;
 		}
 
-		constexpr auto operator+(BasicInteger const& other) const noexcept(AllowOverflow) -> BasicInteger {
-			auto expect = add(other);
-			if (expect) return *expect;
-			if constexpr (AllowOverflow) {
-				return {};
-			} else {
-				switch (expect.error()) {
-					case BigNumError::Overflow: throw std::runtime_error("BasicInteger: Overflow occured.");
-					case BigNumError::Underflow: throw std::runtime_error("BasicInteger: Underflow occured.");
-					default: break;
-				}
-
-				std::unreachable();
-			}
+		constexpr auto operator+(BasicInteger const& other) const -> BasicInteger {
+			return add(other);
 		}
 
-		constexpr auto operator*(BasicInteger const& other) const -> BasicInteger<multiplicationResultSize, IsSigned, AllowOverflow> {
-			auto expect = mul(other);
-			if (expect) return *expect;
-			if constexpr (AllowOverflow) {
-				return {};
-			} else {
-				switch (expect.error()) {
-					case BigNumError::Overflow: throw std::runtime_error("BasicInteger: Overflow occured.");
-					case BigNumError::Underflow: throw std::runtime_error("BasicInteger: Underflow occured.");
-					default: break;
-				}
-
-				std::unreachable();
-			}
+		constexpr auto operator*(BasicInteger const& other) const -> BasicInteger {
+			return mul(other);
 		}
 		
-		constexpr auto operator-(BasicInteger const& other) const noexcept(AllowOverflow) -> BasicInteger {
-			auto expect = sub(other);
-			if (expect) return *expect;
-			if constexpr (AllowOverflow) {
-				return {};;
-			} else {
-				switch (expect.error()) {
-					case BigNumError::Overflow: throw std::runtime_error("BasicInteger: Overflow occured.");
-					case BigNumError::Underflow: throw std::runtime_error("BasicInteger: Underflow occured.");
-					default: break;
-				}
-
-				std::unreachable();
-			}
+		constexpr auto operator-(BasicInteger const& other) const -> BasicInteger {
+			return sub(other);
 		}
 
 		std::string to_str(Radix radix = Radix::Dec, bool with_prefix = false, std::optional<char> separator = {}) const {
@@ -570,26 +447,22 @@ namespace dark::internal {
 		}
 
 		template <std::integral I>
-			requires (IsSigned && std::numeric_limits<I>::is_signed)
 		friend constexpr auto operator==(BasicInteger const& lhs, I s) -> bool {
 			auto rhs = BasicInteger(s); 
 			return lhs == rhs;
 		}
 
 		template <std::integral I>
-			requires (IsSigned && std::numeric_limits<I>::is_signed)
 		friend constexpr auto operator==(I s, BasicInteger const& rhs) -> bool {
 			return (rhs == s);
 		}
 
 		template <std::integral I>
-			requires (IsSigned && std::numeric_limits<I>::is_signed)
 		friend constexpr auto operator!=(BasicInteger const& lhs, I s) -> bool {
 			return !(lhs == s);
 		}
 
 		template <std::integral I>
-			requires (IsSigned && std::numeric_limits<I>::is_signed)
 		friend constexpr auto operator!=(I s, BasicInteger const& rhs) -> bool {
 			return !(rhs == s);
 		}
@@ -620,30 +493,24 @@ namespace dark::internal {
 			return compare(other, std::greater_equal<>{});
 		}
 
-		constexpr auto shift_left(std::size_t shift, bool should_extend = false) const noexcept(IsFixed) -> std::expected<BasicInteger, BigNumError> {
+		constexpr auto shift_left(std::size_t shift, bool should_extend = false) const -> BasicInteger {
 			auto temp = *this;
-			auto e = shift_left_helper(temp, shift, should_extend);
-			if (!e) return std::unexpected(e.error());
+			shift_left_helper(temp, shift, should_extend);
 			return temp;
 		}
 		
-		constexpr auto shift_left_mut(std::size_t shift, bool should_extend = false) noexcept -> std::expected<void, BigNumError> {
-			auto e = shift_left_helper(*this, shift, should_extend);
-			if (!e) return std::unexpected(e.error());
-			return {};
+		constexpr auto shift_left_mut(std::size_t shift, bool should_extend = false) noexcept -> void {
+			shift_left_helper(*this, shift, should_extend);
 		}
 
-		constexpr auto shift_right(std::size_t shift) const noexcept(IsFixed) -> std::expected<BasicInteger, BigNumError> {
+		constexpr auto shift_right(std::size_t shift) const -> BasicInteger {
 			auto temp = *this;
-			auto e = shift_right_helper(temp, shift);
-			if (!e) return std::unexpected(e.error());
+			shift_right_helper(temp, shift);
 			return temp;
 		}
 		
-		constexpr auto shift_right_mut(std::size_t shift) noexcept -> std::expected<void, BigNumError> {
-			auto e = shift_right_helper(*this, shift);
-			if (!e) return std::unexpected(e.error());
-			return {};
+		constexpr auto shift_right_mut(std::size_t shift) noexcept -> void {
+			shift_right_helper(*this, shift);
 		}
 
 		template <std::integral T>
@@ -682,7 +549,7 @@ namespace dark::internal {
 			set_is_neg(false);
 		}
 
-		[[nodiscard]] constexpr auto abs() const noexcept(IsFixed) -> BasicInteger {
+		[[nodiscard]] constexpr auto abs() const -> BasicInteger {
 			auto temp = *this;
 			temp.abs_mut();
 			return temp;
@@ -702,15 +569,11 @@ namespace dark::internal {
 			return false;
 		}
 
-		constexpr auto set_bit(std::size_t pos, bool flag, bool should_expand = false) noexcept -> void {
+		constexpr auto set_bit(std::size_t pos, bool flag, bool should_expand = false) -> void {
 			auto index = pos / BlockInfo::total_bits;
 			if (index >= size()) {
-				if constexpr (IsFixed) {
-					return;
-				} else {
-					if (!should_expand) return;
-					resize(index + 1, 0);
-				}
+				if (!should_expand) return;
+				resize(index + 1, 0);
 			}
 			pos = pos % BlockInfo::total_bits;
 			
@@ -732,30 +595,22 @@ namespace dark::internal {
 			BasicInteger& out,
 			std::size_t shift,
 			bool should_extend
-		) noexcept -> std::expected<void, BigNumError> {
+		) noexcept -> void {
 			if (should_extend) {
 				auto const diff_bits = shift;
 				auto const diff_size = (diff_bits + BlockInfo::total_bits - 1) / BlockInfo::total_bits;
-				if constexpr (IsFixed) {
-					if (diff_size != 0) {
-						return std::unexpected(BigNumError::CannotResize);
-					}
-				} else {
-					out.m_data.resize(out.size() + diff_size, 0);
-				}
+				out.m_data.resize(out.size() + diff_size, 0);
 			}
 			logical_left_shift(out.data(), out.size(), shift);
 			out.trim_zero();
-			return {};
 		}
 
 		static constexpr auto shift_right_helper(
 			BasicInteger& out,
 			std::size_t shift
-		) noexcept -> std::expected<void, BigNumError> {
+		) noexcept -> void {
 			logical_right_shift(out.data(), out.size(), shift);
 			out.trim_zero();
-			return {};
 		}
 		
 		template <typename Fn>
@@ -783,70 +638,47 @@ namespace dark::internal {
 			BasicInteger const* a,
 			BasicInteger const* b,
 			bool check_sign = true
-		) noexcept -> std::expected<void, BigNumError> {
-			if constexpr (IsSigned) {
-				if (check_sign && a->is_neg() != b->is_neg()) return sub_impl(res, a, b, false);
-			}
+		) noexcept -> void {
+			if (check_sign && a->is_neg() != b->is_neg()) return sub_impl(res, a, b, false);
 
-			if constexpr (!IsFixed) {
-				auto size_required = std::max(a->size(), b->size());
-				res->m_data.resize(size_required, 0);
-				res->m_bits = std::max(a->bits(), b->bits());
-			} else {
-				res->m_bits = Bits;
-			}
+			auto size_required = std::max(a->size(), b->size());
+			res->m_data.resize(size_required, 0);
+			res->m_bits = std::max(a->bits(), b->bits());
 
 			res->set_is_neg(a->is_neg());
 			
 			auto carry = block_acc_t{};
-			if constexpr (!IsFixed || (Bits > BlockInfo::total_bits)) {
-				auto* lhs = res->m_data.data();
+			auto* lhs = res->m_data.data();
 
-				if (a->abs_less(*b)) {
-					std::swap(a, b);
-				}
+			if (a->abs_less(*b)) {
+				std::swap(a, b);
+			}
 
-				auto size = std::min(a->size(), b->size());
+			auto size = std::min(a->size(), b->size());
 
+			auto i = 0zu;
+			auto const* a_data = a->m_data.data();
+			auto const* b_data = b->m_data.data(); 
 
-				auto i = 0zu;
-				auto const* a_data = a->m_data.data();
-				auto const* b_data = b->m_data.data(); 
+			for (; i < size; ++i) {
+				auto [acc, c] = integer::safe_add_helper(a_data[i], b_data[i] + carry);
+				lhs[i] = acc;
+				carry = c;
+			}
 
-				for (; i < size; ++i) {
-					auto [acc, c] = integer::safe_add_helper(a_data[i], b_data[i] + carry);
-					lhs[i] = acc;
-					carry = c;
-				}
-
-				size = a->size();
-				for (; i < size; ++i) {
-					auto [acc, c] = integer::safe_add_helper(a_data[i], carry);
-					lhs[i] = acc;
-					carry = c;
-				}
-			} else {
-				auto av = static_cast<block_acc_t>(a->m_data[0]);
-				auto bv = static_cast<block_acc_t>(b->m_data[0]);
-				auto acc = av + bv;	
-				res->m_data[0] = acc & BlockInfo::lower_mask;
-				carry = acc >> BlockInfo::total_bits;
+			size = a->size();
+			for (; i < size; ++i) {
+				auto [acc, c] = integer::safe_add_helper(a_data[i], carry);
+				lhs[i] = acc;
+				carry = c;
 			}
 
 			if (carry) {
-				if constexpr (!AllowOverflow) {
-					return std::unexpected(BigNumError::Overflow);
-				} else {
-					res->set_overflow(true);
-					if constexpr (!IsFixed) {
-						res->m_data.push_back(static_cast<block_t>(carry));
-					}
-				}
+				res->set_overflow(true);
+				res->m_data.push_back(static_cast<block_t>(carry));
 			}
 			
 			res->trim_zero();
-
-			return {};
 		}
 
 		static constexpr auto sub_impl(
@@ -854,123 +686,81 @@ namespace dark::internal {
 			BasicInteger const* a,
 			BasicInteger const* b,
 			bool check_sign = true
-		) noexcept -> std::expected<void, BigNumError> {
-			if constexpr (IsSigned) {
-				if (check_sign && a->is_neg() != b->is_neg()) return add_impl(res, a, b, false);
-			}
+		) noexcept -> void {
+			if (check_sign && a->is_neg() != b->is_neg()) return add_impl(res, a, b, false);
 
-			if constexpr (!IsFixed) {
-				auto size_required = std::max(a->size(), b->size());
-				res->m_data.resize(size_required, 0);
-				res->m_bits = std::max(a->bits(), b->bits());
-			} else {
-				res->m_bits = Bits;
-			}
+			auto size_required = std::max(a->size(), b->size());
+			res->m_data.resize(size_required, 0);
+			res->m_bits = std::max(a->bits(), b->bits());
 
 			auto borrow = block_acc_t{};
 			bool is_neg{false};
 			
-			if constexpr (!IsFixed || (Bits > BlockInfo::total_bits)) {
-				auto* lhs = res->m_data.data();
+			auto* lhs = res->m_data.data();
 
-				auto ls = a->is_neg();
-				auto rs = !b->is_neg();
-				if (a->abs_less(*b)) {
-					std::swap(a, b);
-					std::swap(ls, rs);
-				}
-				// Case 1: -ve - (-ve)
-				//			= -ve + +ve
-				//			= -(+ve - +ve)
-				// Case 2: +ve - (+ve)
-				//			= +ve - +ve
-				is_neg = ls;
-
-				auto size = std::min(a->size(), b->size());
-			
-				auto i = 0zu;
-				auto const* a_data = a->m_data.data();
-				auto const* b_data = b->m_data.data();
-
-				for (; i < size; ++i) {
-					auto minuend = static_cast<block_acc_t>(a_data[i]);
-					auto subtrahend = static_cast<block_acc_t>(b_data[i]) + borrow;
-					auto [acc, br] = integer::safe_sub_helper(minuend, subtrahend);
-					lhs[i] = acc;
-					borrow = br;
-				}
-
-				size = a->size();
-				for (; i < size; ++i) {
-					auto minuend = static_cast<block_acc_t>(a_data[i]);
-					auto subtrahend = borrow;
-					auto [acc, br] = integer::safe_sub_helper(minuend, subtrahend);
-					lhs[i] = acc;
-					borrow = br;
-				}
-				res->trim_zero();
-			} else {
-				auto av = static_cast<block_acc_t>(a->m_data[0]);
-				auto bv = static_cast<block_acc_t>(b->m_data[0]);
-				auto acc = block_acc_t{};
-				if constexpr (IsSigned) {
-					if (av < bv) {
-						std::swap(av, bv);
-						is_neg = true;
-					}
-					acc = av - bv;
-				} else {
-					acc = (av < bv) ? bv - av : av - bv;
-				}
-				res->m_data[0] = (acc & BlockInfo::lower_mask);
-				borrow = static_cast<bool>(acc >> BlockInfo::total_bits);
+			auto ls = a->is_neg();
+			auto rs = !b->is_neg();
+			if (a->abs_less(*b)) {
+				std::swap(a, b);
+				std::swap(ls, rs);
 			}
+			// Case 1: -ve - (-ve)
+			//			= -ve + +ve
+			//			= -(+ve - +ve)
+			// Case 2: +ve - (+ve)
+			//			= +ve - +ve
+			is_neg = ls;
+
+			auto size = std::min(a->size(), b->size());
+		
+			auto i = 0zu;
+			auto const* a_data = a->m_data.data();
+			auto const* b_data = b->m_data.data();
+
+			for (; i < size; ++i) {
+				auto minuend = static_cast<block_acc_t>(a_data[i]);
+				auto subtrahend = static_cast<block_acc_t>(b_data[i]) + borrow;
+				auto [acc, br] = integer::safe_sub_helper(minuend, subtrahend);
+				lhs[i] = acc;
+				borrow = br;
+			}
+
+			size = a->size();
+			for (; i < size; ++i) {
+				auto minuend = static_cast<block_acc_t>(a_data[i]);
+				auto subtrahend = borrow;
+				auto [acc, br] = integer::safe_sub_helper(minuend, subtrahend);
+				lhs[i] = acc;
+				borrow = br;
+			}
+			res->trim_zero();
 			
 			res->set_is_neg(is_neg);
 			if (borrow || is_neg) {
-				if constexpr (!AllowOverflow) {
-					return std::unexpected(BigNumError::Underflow);	
-				} else {
-					res->set_underflow(true);
-				}
+				res->set_underflow(true);
 			}
-
-			return {};	
 		}
 
-		template <std::size_t T, std::size_t M>
 		static constexpr auto mul_ntt_impl(
-			BasicInteger<M, IsSigned, AllowOverflow>* res,
+			BasicInteger* res,
 			BasicInteger const* a,
 			BasicInteger const* b
-		) noexcept {
-			constexpr auto s_size = impl::NTT::calculate_max_operands_size(Bits, Bits);
-			if constexpr (M > 0 && Bits > T * BlockInfo::total_bits) {
-				static_assert(s_size  <= M, "Not enough space to store the result of multiplication.");
-			}
+		) noexcept -> void {
+			auto const size = impl::NTT::calculate_max_operands_size(a->size(), b->size());
 
-			auto const size = (M > 0 ? s_size : impl::NTT::calculate_max_operands_size(a->size(), b->size()));
-
-			if constexpr (M == 0) {
-				res->resize(size << 1);
-				res->m_bits = a->bits() + b->bits();
-			}
+			res->resize(size << 1);
+			res->m_bits = a->bits() + b->bits();
 
 			impl::NTT::mul(res->data(), size << 1, a->data(), a->size(), b->data(), b->size(), size);
 		}
 
 		static constexpr auto mul_impl(
-			BasicInteger<multiplicationResultSize, IsSigned, AllowOverflow>* res,
+			BasicInteger* res,
 			BasicInteger const* a,
 			BasicInteger const* b,
 			MulKind kind
-		) noexcept -> std::expected<void, BigNumError> {
-			if constexpr (!IsFixed) {
-				res->m_bits = a->bits() + b->bits();
-			} else {
-				res->m_bits = Bits << 1;
-				res->set_zero();
-			}
+		) noexcept -> void {
+			res->m_bits = a->bits() + b->bits();
 
 			auto const a_size = a->size();
 			auto const b_size = b->size();
@@ -1004,7 +794,7 @@ namespace dark::internal {
 			};
 
 			auto const ntt_impl = [&] {
-				mul_ntt_impl<karatsuba_threshold>(
+				mul_ntt_impl(
 					res,
 					a,
 					b
@@ -1025,7 +815,6 @@ namespace dark::internal {
 
 			res->set_is_neg(a->is_neg() || b->is_neg());
 			res->trim_zero();
-			return {};
 		}
 
 		static constexpr auto div_impl(
@@ -1034,38 +823,27 @@ namespace dark::internal {
 			BasicInteger const& num,
 			BasicInteger const& den,
 			DivKind kind
-		) noexcept -> std::expected<void, BigNumError> {
-			if constexpr (IsFixed) {
-				if (quot.size() != num.size()) {
-					return std::unexpected(BigNumError::CannotResize);
-				}
-				if (rem.size() != num.size()) {
-					return std::unexpected(BigNumError::CannotResize);
-				}
-			} else {
-				quot.resize(num.size(), 0);
-				rem.resize(num.size(), 0);
-			}
+		) noexcept -> void {
+			quot.resize(num.size(), 0);
+			rem.resize(num.size(), 0);
 			quot.m_bits = num.bits();
 			rem.m_bits = num.bits();
-
-			std::expected<void, BigNumError> e{};
 			
 			switch(kind) {
 				case DivKind::LongDiv:
-					e = integer::long_div(num, den, quot, rem);
+					integer::long_div(num, den, quot, rem);
+					break;
+				case DivKind::NewtonRaphson:
+					/*integer::newton_raphson_div(num, den, quot, rem);*/
 					break;
 				default: break;
 			}
 			quot.trim_zero();
 			rem.trim_zero();
-			return e;
 		}
 
-		constexpr auto trim_zero() noexcept {
-			if constexpr (!IsFixed) {
-				while (!m_data.empty() && m_data.back() == 0) m_data.pop_back();
-			}
+		constexpr auto trim_zero() noexcept -> void {
+			while (!m_data.empty() && m_data.back() == 0) m_data.pop_back();
 			if (m_data.empty()) {
 				set_is_neg(false);
 				m_bits = 0;
@@ -1077,10 +855,8 @@ namespace dark::internal {
 
 
 	private:
-		constexpr auto resize(std::size_t len, block_t val = {}) noexcept(IsFixed) {
-			if constexpr (!IsFixed) {
-				m_data.resize(len, val);
-			}
+		constexpr auto resize(std::size_t len, block_t val = {}) -> void {
+			m_data.resize(len, val);
 		}
 		
 		static constexpr auto parse_sign(std::string_view num) noexcept -> std::expected<std::pair<bool, std::size_t>, std::string> {
@@ -1226,7 +1002,7 @@ namespace dark::internal {
 			return res;
 		}
 
-		constexpr auto toggle_flag(bool s, BigNumFlag::type flag) {
+		constexpr auto toggle_flag(bool s, BigNumFlag::type flag) -> void {
 			if (s) m_flags |= flag;
 			else m_flags &= ~flag;
 		}
@@ -1239,13 +1015,7 @@ namespace dark::internal {
 } // namespace dark::internal
 
 namespace dark {
-	using BigInteger = internal::BasicInteger<0, true>;
-	using UBigInteger = internal::BasicInteger<0, false>;
-	
-	template <std::size_t Width>
-	using StaticBigInteger = internal::BasicInteger<Width, true>;
-	template <std::size_t Width>
-	using StaticUBigInteger = internal::BasicInteger<Width, false>;
+	using BigInteger = internal::BasicInteger;
 } // namespace dark
 
 #endif // DARK_BIG_NUM_BASIC_INTEGER_HPP

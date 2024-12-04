@@ -22,7 +22,7 @@ namespace dark::internal::integer {
 		std::size_t index,
 		std::size_t size,
 		BlockInfo::accumulator_t val
-	) noexcept {
+	) noexcept -> BlockInfo::accumulator_t {
 		auto carry = val;
 		for (; index < size && carry; ++index) {
 			auto res = safe_add_helper(out[index], carry);
@@ -37,7 +37,7 @@ namespace dark::internal::integer {
 		BlockInfo::type const* a,
 		std::size_t size,
 		std::size_t offset = 0
-	) noexcept {
+	) noexcept -> BlockInfo::accumulator_t {
 		auto carry = BlockInfo::accumulator_t{};
 		for (auto i = 0zu; i < size; ++i) {
 			auto [acc, c] = safe_add_helper(out[i + offset], a[i] + carry);
@@ -62,7 +62,7 @@ namespace dark::internal::integer {
 		std::size_t index,
 		std::size_t size,
 		BlockInfo::accumulator_t val
-	) noexcept {
+	) noexcept -> BlockInfo::accumulator_t {
 		auto borrow = val;
 		for (; index < size && borrow; ++index) {
 			auto res = safe_sub_helper(out[index], borrow);
@@ -77,7 +77,7 @@ namespace dark::internal::integer {
 		BlockInfo::type const* a,
 		std::size_t size,
 		std::size_t offset = 0
-	) noexcept {
+	) noexcept -> BlockInfo::accumulator_t {
 		auto borrow = BlockInfo::accumulator_t{};
 		for (auto i = 0zu; i < size; ++i) {
 			auto [acc, c] = safe_sub_helper(out[i + offset], a[i] + borrow);
@@ -94,7 +94,7 @@ namespace dark::internal::integer {
 		std::size_t lhs_size,
 		BlockInfo::type const* rhs,
 		std::size_t rhs_size
-	) noexcept {
+	) noexcept -> void {
 		assert(lhs_size != 0 && rhs_size != 0 && (out_size == lhs_size + rhs_size));
 		assert(out != nullptr);
 
@@ -129,7 +129,7 @@ namespace dark::internal::integer {
 		BlockInfo::type const* lhs,
 		BlockInfo::type const* rhs,
 		std::size_t size
-	) noexcept {
+	) noexcept -> void {
 		using block_t = typename BlockInfo::type;
 		using acc_t = typename BlockInfo::accumulator_t;
 
@@ -214,7 +214,7 @@ namespace dark::internal::integer {
 		std::size_t lhs_size,
 		BlockInfo::type const* rhs,
 		std::size_t rhs_size
-	) noexcept {
+	) noexcept -> void {
 		assert(out_size <= 2 * MaxLen);
 		BlockInfo::type buff_a[MaxLen] = {0};
 		BlockInfo::type buff_b[MaxLen] = {0};

@@ -130,95 +130,15 @@ TEST_CASE("Dynamic Signed Basic Integer", "[dynamic_signed_basic_integer]") {
 
 		{ // Naive Algo
 			auto res = a->mul(*b, MulKind::Naive);	
-			REQUIRE(res.has_value());
-			REQUIRE(res->to_str(Radix::Hex, true) == "0x1e49629297809a2a504978d7f7834d04839d3a13be7ec1a9625b4b26cd0f81fb109e63c50c11685312c257fa0698c6cd7e22e52");
+			REQUIRE(res.to_str(Radix::Hex, true) == "0x1e49629297809a2a504978d7f7834d04839d3a13be7ec1a9625b4b26cd0f81fb109e63c50c11685312c257fa0698c6cd7e22e52");
 		}
 		{ // Karatsuba Algo
 			auto res = a->mul(*b, MulKind::Karatsuba);	
-			REQUIRE(res.has_value());
-			REQUIRE(res->to_str(Radix::Hex, true) == "0x1e49629297809a2a504978d7f7834d04839d3a13be7ec1a9625b4b26cd0f81fb109e63c50c11685312c257fa0698c6cd7e22e52");
+			REQUIRE(res.to_str(Radix::Hex, true) == "0x1e49629297809a2a504978d7f7834d04839d3a13be7ec1a9625b4b26cd0f81fb109e63c50c11685312c257fa0698c6cd7e22e52");
 		}
 		{ // Karatsuba Algo
 			auto res = a->mul(*b, MulKind::NTT);	
-			REQUIRE(res.has_value());
-			REQUIRE(res->to_str(Radix::Hex, true) == "0x1e49629297809a2a504978d7f7834d04839d3a13be7ec1a9625b4b26cd0f81fb109e63c50c11685312c257fa0698c6cd7e22e52");
+			REQUIRE(res.to_str(Radix::Hex, true) == "0x1e49629297809a2a504978d7f7834d04839d3a13be7ec1a9625b4b26cd0f81fb109e63c50c11685312c257fa0698c6cd7e22e52");
 		}
 	}
 }
-
-TEST_CASE("Dynamic Unsigned Basic Integer", "[dynamic_unsigned_basic_integer]") {
-	SECTION("Construction") {
-		{
-			auto num = UBigInteger::from("123");
-			REQUIRE(num.has_value());
-			REQUIRE(num->to_str(Radix::Hex) == "7b");
-			REQUIRE(num->to_str(Radix::Dec) == "123");
-			REQUIRE(num->to_str(Radix::Octal) == "173");
-			REQUIRE(num->to_str(Radix::Binary) == "1111011");
-		}
-		{
-			auto num = UBigInteger::from("-123");
-			REQUIRE(!num.has_value());
-		}
-		{
-			auto num = UBigInteger("123");
-			REQUIRE(num.to_str(Radix::Hex) == "7b");
-			REQUIRE(num.to_str(Radix::Dec) == "123");
-			REQUIRE(num.to_str(Radix::Octal) == "173");
-			REQUIRE(num.to_str(Radix::Binary) == "1111011");
-		}
-	}
-}
-
-TEST_CASE("Static Signed Basic Integer", "[static_signed_basic_integer]") {
-	SECTION("Construction") {
-		{
-			auto num = StaticBigInteger<64 /*Bits*/>::from("123");
-			REQUIRE(num.has_value());
-			REQUIRE(num->to_str(Radix::Hex) == "7b");
-			REQUIRE(num->to_str(Radix::Dec) == "123");
-			REQUIRE(num->to_str(Radix::Octal) == "173");
-			REQUIRE(num->to_str(Radix::Binary) == "1111011");
-		}
-		{
-			auto num = StaticBigInteger<64>::from("-123");
-			REQUIRE(num.has_value());
-			REQUIRE(num->to_str(Radix::Hex) == "-7b");
-			REQUIRE(num->to_str(Radix::Dec) == "-123");
-			REQUIRE(num->to_str(Radix::Octal) == "-173");
-			REQUIRE(num->to_str(Radix::Binary) == "-1111011");
-		}
-		{
-			auto num = StaticBigInteger<16>("123");
-			REQUIRE(num.to_str(Radix::Hex) == "7b");
-			REQUIRE(num.to_str(Radix::Dec) == "123");
-			REQUIRE(num.to_str(Radix::Octal) == "173");
-			REQUIRE(num.to_str(Radix::Binary) == "1111011");
-		}
-	}
-}
-
-TEST_CASE("Static Unsigned Basic Integer", "[static_unsigned_basic_integer]") {
-	SECTION("Construction") {
-		{
-			auto num = StaticUBigInteger<64 /*Bits*/>::from("123");
-			REQUIRE(num.has_value());
-			REQUIRE(num->to_str(Radix::Hex) == "7b");
-			REQUIRE(num->to_str(Radix::Dec) == "123");
-			REQUIRE(num->to_str(Radix::Octal) == "173");
-			REQUIRE(num->to_str(Radix::Binary) == "1111011");
-		}
-		{
-			auto num = StaticUBigInteger<64>::from("-123");
-			REQUIRE(!num.has_value());
-		}
-		{
-			auto num = StaticUBigInteger<16>("123");
-			REQUIRE(num.to_str(Radix::Hex) == "7b");
-			REQUIRE(num.to_str(Radix::Dec) == "123");
-			REQUIRE(num.to_str(Radix::Octal) == "173");
-			REQUIRE(num.to_str(Radix::Binary) == "1111011");
-		}
-	}
-}
-
