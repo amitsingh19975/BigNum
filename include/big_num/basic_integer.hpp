@@ -1034,7 +1034,7 @@ namespace dark::internal {
 			BasicInteger const& num,
 			BasicInteger const& den,
 			DivKind kind
-		) noexcept ->std::expected<void, BigNumError> {
+		) noexcept -> std::expected<void, BigNumError> {
 			if constexpr (IsFixed) {
 				if (quot.size() != num.size()) {
 					return std::unexpected(BigNumError::CannotResize);
@@ -1048,13 +1048,18 @@ namespace dark::internal {
 			}
 			quot.m_bits = num.bits();
 			rem.m_bits = num.bits();
+
+			std::expected<void, BigNumError> e{};
 			
 			switch(kind) {
 				case DivKind::LongDiv:
-					return integer::long_div(num, den, quot, rem);	
+					e = integer::long_div(num, den, quot, rem);
+					break;
 				default: break;
 			}
-			return {};
+			quot.trim_zero();
+			rem.trim_zero();
+			return e;
 		}
 
 		constexpr auto trim_zero() noexcept {
