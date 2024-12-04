@@ -6,7 +6,7 @@
 #include <cassert>
 #include <expected>
 
-namespace dark::internal {
+namespace dark::internal::integer {
 
 	// 1. Long division
 	inline static constexpr auto long_div(
@@ -39,9 +39,11 @@ namespace dark::internal {
 		return {};
 	}
 	// 2. Newton–Raphson division
+		
+
 	// 3. Large-integer methods
 		
 
-} // namespace dark::internal
+} // namespace dark::internal::integer
 
 #endif // DARK_BIG_NUM_DIVISION_HPP

@@ -814,14 +814,14 @@ namespace dark::internal {
 				auto const* b_data = b->m_data.data(); 
 
 				for (; i < size; ++i) {
-					auto [acc, c] = safe_add_helper(a_data[i], b_data[i] + carry);
+					auto [acc, c] = integer::safe_add_helper(a_data[i], b_data[i] + carry);
 					lhs[i] = acc;
 					carry = c;
 				}
 
 				size = a->size();
 				for (; i < size; ++i) {
-					auto [acc, c] = safe_add_helper(a_data[i], carry);
+					auto [acc, c] = integer::safe_add_helper(a_data[i], carry);
 					lhs[i] = acc;
 					carry = c;
 				}
@@ -873,15 +873,18 @@ namespace dark::internal {
 			if constexpr (!IsFixed || (Bits > BlockInfo::total_bits)) {
 				auto* lhs = res->m_data.data();
 
+				auto ls = a->is_neg();
+				auto rs = !b->is_neg();
 				if (a->abs_less(*b)) {
 					std::swap(a, b);
+					std::swap(ls, rs);
 				}
 				// Case 1: -ve - (-ve)
 				//			= -ve + +ve
 				//			= -(+ve - +ve)
 				// Case 2: +ve - (+ve)
 				//			= +ve - +ve
-				is_neg = a->is_neg();
+				is_neg = ls;
 
 				auto size = std::min(a->size(), b->size());
 			
@@ -892,7 +895,7 @@ namespace dark::internal {
 				for (; i < size; ++i) {
 					auto minuend = static_cast<block_acc_t>(a_data[i]);
 					auto subtrahend = static_cast<block_acc_t>(b_data[i]) + borrow;
-					auto [acc, br] = safe_sub_helper(minuend, subtrahend);
+					auto [acc, br] = integer::safe_sub_helper(minuend, subtrahend);
 					lhs[i] = acc;
 					borrow = br;
 				}
@@ -901,7 +904,7 @@ namespace dark::internal {
 				for (; i < size; ++i) {
 					auto minuend = static_cast<block_acc_t>(a_data[i]);
 					auto subtrahend = borrow;
-					auto [acc, br] = safe_sub_helper(minuend, subtrahend);
+					auto [acc, br] = integer::safe_sub_helper(minuend, subtrahend);
 					lhs[i] = acc;
 					borrow = br;
 				}
@@ -975,7 +978,7 @@ namespace dark::internal {
 
 			auto const naive_mul_impl = [&] {
 				res->resize(res_actual_size, 0);
-				naive_mul(
+				integer::naive_mul(
 					res->data(),
 					res->size(),
 					a->data(),
@@ -988,7 +991,7 @@ namespace dark::internal {
 			auto const karatsub_mul_impl = [&] {
 				auto temp_size = std::max(a_size, b_size);
 				res->resize(temp_size << 1, 0);
-				karatsuba_mul<karatsuba_threshold, naive_threshold>(
+				integer::karatsuba_mul<karatsuba_threshold, naive_threshold>(
 					res->data(),
 					res->size(),
 					a->data(),
@@ -1048,7 +1051,7 @@ namespace dark::internal {
 			
 			switch(kind) {
 				case DivKind::LongDiv:
-					return long_div(num, den, quot, rem);	
+					return integer::long_div(num, den, quot, rem);	
 				default: break;
 			}
 			return {};

@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <cassert>
 
-namespace dark::internal {
+namespace dark::internal::integer {
 	
 	inline constexpr auto safe_add_helper(
 		BlockInfo::accumulator_t lhs,
@@ -229,6 +229,6 @@ namespace dark::internal {
 	}
 	
 
-} // namespace dark::internal
+} // namespace dark::internal::integer
 
 #endif // DARK_BIG_NUM_MUL_HPP
