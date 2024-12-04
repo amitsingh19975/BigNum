@@ -781,10 +781,11 @@ namespace dark::internal {
 		static constexpr auto add_impl(
 			BasicInteger* res,
 			BasicInteger const* a,
-			BasicInteger const* b
+			BasicInteger const* b,
+			bool check_sign = true
 		) noexcept -> std::expected<void, BigNumError> {
 			if constexpr (IsSigned) {
-				if (a->is_neg() != b->is_neg()) return sub_impl(res, a, b);
+				if (check_sign && a->is_neg() != b->is_neg()) return sub_impl(res, a, b, false);
 			}
 
 			if constexpr (!IsFixed) {
@@ -794,6 +795,8 @@ namespace dark::internal {
 			} else {
 				res->m_bits = Bits;
 			}
+
+			res->set_is_neg(a->is_neg());
 			
 			auto carry = block_acc_t{};
 			if constexpr (!IsFixed || (Bits > BlockInfo::total_bits)) {
@@ -849,10 +852,11 @@ namespace dark::internal {
 		static constexpr auto sub_impl(
 			BasicInteger* res,
 			BasicInteger const* a,
-			BasicInteger const* b
+			BasicInteger const* b,
+			bool check_sign = true
 		) noexcept -> std::expected<void, BigNumError> {
 			if constexpr (IsSigned) {
-				if (a->is_neg() != b->is_neg()) return add_impl(res, a, b);
+				if (check_sign && a->is_neg() != b->is_neg()) return add_impl(res, a, b, false);
 			}
 
 			if constexpr (!IsFixed) {
@@ -870,9 +874,14 @@ namespace dark::internal {
 				auto* lhs = res->m_data.data();
 
 				if (a->abs_less(*b)) {
-					is_neg = true;
 					std::swap(a, b);
 				}
+				// Case 1: -ve - (-ve)
+				//			= -ve + +ve
+				//			= -(+ve - +ve)
+				// Case 2: +ve - (+ve)
+				//			= +ve - +ve
+				is_neg = a->is_neg();
 
 				auto size = std::min(a->size(), b->size());
 			
