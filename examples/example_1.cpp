@@ -1,4 +1,4 @@
-#include <iostream>
+#include <print>
 #include "big_num.hpp"
 #include "big_num/basic_integer.hpp"
 
@@ -8,6 +8,8 @@ int main() {
     auto lhs = dark::BigInteger("827394650391827364598273645982736459827364598273645982736459827364598273645982736459982");
     auto rhs = dark::BigInteger("0x1234567890abcdef0123456789abdef");
 
-    std::cout << lhs.to_str(dark::Radix::Dec) << " - " << rhs << "\n = " << (lhs * rhs) << '\n';
+    auto res = lhs.div(rhs, dark::DivKind::LongDiv);
+    auto [quot, rem] = res;
+    std::println("Q: {}, R: {}", quot, rem);
     return 0;
 }
