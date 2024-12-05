@@ -453,7 +453,7 @@ namespace dark::internal {
 			return temp;
 		}
 		
-		constexpr auto shift_left_mut(std::size_t shift, bool should_extend = false) noexcept -> void {
+		constexpr auto shift_left_mut(std::size_t shift, bool should_extend = false) -> void {
 			shift_left_helper(*this, shift, should_extend);
 		}
 
@@ -470,32 +470,26 @@ namespace dark::internal {
 		template <std::integral T>
 			requires (!std::numeric_limits<T>::is_signed)
 		constexpr auto operator<<(T shift) const -> BasicInteger {
-			auto e = shift_left(shift);
-			if (!e) throw std::runtime_error(std::string(to_string(e.error())));
-			return *e;
+			return shift_left(shift);
 		}
 
 		template <std::integral T>
 			requires (!std::numeric_limits<T>::is_signed)
 		constexpr auto operator<<=(T shift) -> BasicInteger& {
-			auto e = shift_left_mut(shift);
-			if (!e) throw std::runtime_error(std::string(to_string(e.error())));
+			shift_left_mut(shift);
 			return *this;
 		}
 
 		template <std::integral T>
 			requires (!std::numeric_limits<T>::is_signed)
-		constexpr auto operator>>(T shift) const -> BasicInteger {
-			auto e = shift_right(shift);
-			if (!e) throw std::runtime_error(std::string(to_string(e.error())));
-			return *e;
+		constexpr auto operator>>(T shift) const noexcept -> BasicInteger {
+			return shift_right(shift);
 		}
 
 		template <std::integral T>
 			requires (!std::numeric_limits<T>::is_signed)
-		constexpr auto operator>>=(T shift) -> BasicInteger& {
-			auto e = shift_right_mut(shift);
-			if (!e) throw std::runtime_error(std::string(to_string(e.error())));
+		constexpr auto operator>>=(T shift) noexcept -> BasicInteger& {
+			shift_right_mut(shift);
 			return *this;
 		}
 
