@@ -17,7 +17,6 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-#include <array>
 #include <optional>
 #include <expected>
 #include "big_num/bitwise.hpp"
@@ -27,59 +26,7 @@
 #include "utils.hpp"
 #include "mul.hpp"
 #include "error.hpp"
-
-namespace dark {
-	enum class Radix: std::uint8_t {
-		None = 0,
-		Binary = 2,
-		Octal = 8,
-		Dec = 10,
-		Hex = 16
-	};
-
-	constexpr std::string_view to_string(Radix r) noexcept {
-		switch (r) {
-			case Radix::None: return "unknown";
-			case Radix::Binary: return "binary";
-			case Radix::Octal: return "octal";
-			case Radix::Dec: return "decimal";
-			case Radix::Hex: return "hexadecimal";
-		}
-	}
-	
-	constexpr std::string_view get_prefix(Radix r) noexcept {
-		switch (r) {
-			case Radix::None: return "";
-			case Radix::Binary: return "0b";
-			case Radix::Octal: return "0o";
-			case Radix::Dec: return "";
-			case Radix::Hex: return "0x";
-		}
-	}
-
-	enum class MulKind {
-		Auto,
-		Naive,
-		Karatsuba,
-		NTT
-	};
-
-	enum class DivKind {
-		Auto,
-		LongDiv,
-		NewtonRaphson,
-		LargeInteger
-	};
-
-	struct BigNumFlag {
-		using type = std::uint8_t;
-		static constexpr type None = 0;
-		static constexpr type Neg = 1;
-		static constexpr type Overflow = 2;
-		static constexpr type Underflow = 4;
-		static constexpr type IsSigned = 8;
-	};
-} // namespace dark
+#include "basic.hpp"
 
 namespace dark::internal {
 
@@ -281,7 +228,7 @@ namespace dark::internal {
 			return os << o.to_str(Radix::Hex, true);	
 		}
 
-		constexpr auto add(BasicInteger const& other) const noexcept -> BasicInteger {
+		constexpr auto add(BasicInteger const& other) const -> BasicInteger {
 			auto res = BasicInteger();
 			add_impl(&res, this, &other);
 			return res;
@@ -292,7 +239,7 @@ namespace dark::internal {
 		}
 
 
-		constexpr auto sub(BasicInteger const& other) const noexcept -> BasicInteger {
+		constexpr auto sub(BasicInteger const& other) const -> BasicInteger {
 			auto res = BasicInteger();
 			sub_impl(&res, this, &other);
 			return res;
@@ -302,12 +249,19 @@ namespace dark::internal {
 			sub_impl(this, this, &other);
 		}
 		
-		constexpr auto mul(BasicInteger const& other, MulKind kind = MulKind::Auto) const noexcept -> BasicInteger {
+		constexpr auto mul(BasicInteger const& other, MulKind kind = MulKind::Auto) const -> BasicInteger {
 			auto res = BasicInteger();
 			mul_impl(&res, this, &other, kind);
 			return res;
 		}
 
+		constexpr auto mul_mut(BasicInteger const& other, MulKind kind = MulKind::Auto) -> void {
+			auto temp = *this;
+			mul_impl(this, &temp, &other, kind);
+		}
+
+		// NOTE: it's templated to avoid lazy load type since BasicInteger is not defined
+		// completely.
 		template <typename I>
 		struct Div {
 			I quot;
@@ -760,6 +714,13 @@ namespace dark::internal {
 			BasicInteger const* b,
 			MulKind kind
 		) noexcept -> void {
+			if (a->is_zero() || b->is_zero()) {
+				res->m_data.clear();
+				res->m_bits = 0;
+				res->m_flags = 0;
+				return;
+			}
+
 			res->m_bits = a->bits() + b->bits();
 
 			auto const a_size = a->size();
@@ -834,7 +795,7 @@ namespace dark::internal {
 					integer::long_div(num, den, quot, rem);
 					break;
 				case DivKind::NewtonRaphson:
-					/*integer::newton_raphson_div(num, den, quot, rem);*/
+					integer::newton_raphson_div(num, den, quot, rem);
 					break;
 				default: break;
 			}
