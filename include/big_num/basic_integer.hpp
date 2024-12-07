@@ -25,7 +25,6 @@
 #include "block_info.hpp"
 #include "utils.hpp"
 #include "mul.hpp"
-#include "error.hpp"
 #include "basic.hpp"
 
 namespace dark::internal {
@@ -225,39 +224,43 @@ namespace dark::internal {
 		constexpr const_pointer data() const noexcept { return m_data.data(); }
 
 		friend std::ostream& operator<<(std::ostream& os, BasicInteger const& o) {
-			return os << o.to_str(Radix::Hex, true);	
+			return os << o.to_str();	
 		}
 
 		constexpr auto add(BasicInteger const& other) const -> BasicInteger {
-			auto res = BasicInteger();
-			add_impl(&res, this, &other);
+			auto res = *this;
+			res.add_mut(other);
 			return res;
 		}
 		
-		constexpr auto add_mut(BasicInteger const& other) noexcept -> void {
+		constexpr auto add_mut(BasicInteger const& other) noexcept -> BasicInteger& {
 			add_impl(this, this, &other);
+			return *this;
 		}
 
 
 		constexpr auto sub(BasicInteger const& other) const -> BasicInteger {
-			auto res = BasicInteger();
-			sub_impl(&res, this, &other);
+			auto res = *this;
+			res.sub_mut(other);
 			return res;
 		}
 
-		constexpr auto sub_mut(BasicInteger const& other) noexcept -> void {
+		constexpr auto sub_mut(BasicInteger const& other) noexcept -> BasicInteger& {
 			sub_impl(this, this, &other);
+			return *this;	
 		}
 		
 		constexpr auto mul(BasicInteger const& other, MulKind kind = MulKind::Auto) const -> BasicInteger {
-			auto res = BasicInteger();
-			mul_impl(&res, this, &other, kind);
+			auto res = *this;
+			res.mul_mut(other, kind);
 			return res;
 		}
 
-		constexpr auto mul_mut(BasicInteger const& other, MulKind kind = MulKind::Auto) -> void {
+		constexpr auto mul_mut(BasicInteger const& other, MulKind kind = MulKind::Auto) -> BasicInteger& {
 			auto temp = *this;
+			m_data.clear();
 			mul_impl(this, &temp, &other, kind);
+			return *this;
 		}
 
 		// NOTE: it's templated to avoid lazy load type since BasicInteger is not defined
@@ -268,22 +271,111 @@ namespace dark::internal {
 			I rem;
 		};
 
-		constexpr auto div(BasicInteger const& other, DivKind kind = DivKind::Auto) const noexcept -> Div<BasicInteger> {
+		constexpr auto div(BasicInteger const& other, DivKind kind = DivKind::Auto) const -> Div<BasicInteger> {
 			auto result = Div<BasicInteger>{};
 			div_impl(result.quot, result.rem, *this, other, kind);
 			return result;
+		}
+
+		constexpr auto bitwise_or(BasicInteger const& other) const -> BasicInteger {
+			auto res = *this;
+			res.bitwise_or_mut(other);
+			return res;
+		}
+
+		constexpr auto bitwise_or_mut(BasicInteger const& other) -> BasicInteger& {
+			bitwise_op_helper(
+				*this,
+				other,
+				[](auto l, auto r) { return l | r; }
+			);
+			return *this;
+		}
+
+		constexpr auto bitwise_and(BasicInteger const& other) const -> BasicInteger {
+			auto res = *this;
+			res.bitwise_and_mut(other);
+			return res;
+		}
+
+		constexpr auto bitwise_and_mut(BasicInteger const& other) -> BasicInteger& {
+			bitwise_op_helper(
+				*this,
+				other,
+				[](auto l, auto r) { return l & r; }
+			);
+			return *this;
 		}
 
 		constexpr auto operator+(BasicInteger const& other) const -> BasicInteger {
 			return add(other);
 		}
 
+		constexpr auto operator-(BasicInteger const& other) const -> BasicInteger {
+			return sub(other);
+		}
+
 		constexpr auto operator*(BasicInteger const& other) const -> BasicInteger {
 			return mul(other);
 		}
+
+		constexpr auto operator/(BasicInteger const& other) const -> BasicInteger {
+			return div(other).quot;
+		}
+
+		constexpr auto operator%(BasicInteger const& other) const -> BasicInteger {
+			return div(other).rem;
+		}
 		
-		constexpr auto operator-(BasicInteger const& other) const -> BasicInteger {
-			return sub(other);
+		constexpr auto operator+=(BasicInteger const& other) -> BasicInteger& {
+			return add_mut(other);
+		}
+
+		constexpr auto operator-=(BasicInteger const& other) -> BasicInteger& {
+			return sub_mut(other);
+		}
+
+		constexpr auto operator*=(BasicInteger const& other) -> BasicInteger& {
+			mul_mut(other);
+			return *this;
+		}
+
+		constexpr auto operator/=(BasicInteger const& other) -> BasicInteger& {
+			auto [q, _] = div(other);
+			swap(*this, q);
+			return *this;
+		}
+
+		constexpr auto operator%(BasicInteger const& other) -> BasicInteger& {
+			auto [_, r] = div(other);
+			swap(*this, r);
+			return *this;
+		}
+
+		constexpr auto operator|(BasicInteger const& other) const -> BasicInteger {
+			return bitwise_or(other);
+		}
+
+		constexpr auto operator|=(BasicInteger const& other) -> BasicInteger& {
+			return bitwise_or_mut(other);
+		}
+
+		constexpr auto operator&(BasicInteger const& other) const -> BasicInteger {
+			return bitwise_and(other);
+		}
+
+		constexpr auto operator&=(BasicInteger const& other) -> BasicInteger& {
+			return bitwise_and_mut(other);
+		}
+
+		constexpr auto operator-() -> BasicInteger {
+			auto temp = *this;
+			temp.set_is_neg(!temp.is_neg());
+			return temp;
+		}
+
+		constexpr auto operator+() -> BasicInteger {
+			return *this;
 		}
 
 		std::string to_str(Radix radix = Radix::Dec, bool with_prefix = false, std::optional<char> separator = {}) const {
@@ -453,8 +545,9 @@ namespace dark::internal {
 			return temp;
 		}
 		
-		constexpr auto shift_left_mut(std::size_t shift, bool should_extend = false) -> void {
+		constexpr auto shift_left_mut(std::size_t shift, bool should_extend = false) -> BasicInteger& {
 			shift_left_helper(*this, shift, should_extend);
+			return *this;
 		}
 
 		constexpr auto shift_right(std::size_t shift) const -> BasicInteger {
@@ -463,8 +556,9 @@ namespace dark::internal {
 			return temp;
 		}
 		
-		constexpr auto shift_right_mut(std::size_t shift) noexcept -> void {
+		constexpr auto shift_right_mut(std::size_t shift) noexcept -> BasicInteger& {
 			shift_right_helper(*this, shift);
+			return *this;
 		}
 
 		template <std::integral T>
@@ -476,8 +570,7 @@ namespace dark::internal {
 		template <std::integral T>
 			requires (!std::numeric_limits<T>::is_signed)
 		constexpr auto operator<<=(T shift) -> BasicInteger& {
-			shift_left_mut(shift);
-			return *this;
+			return shift_left_mut(shift);
 		}
 
 		template <std::integral T>
@@ -489,15 +582,15 @@ namespace dark::internal {
 		template <std::integral T>
 			requires (!std::numeric_limits<T>::is_signed)
 		constexpr auto operator>>=(T shift) noexcept -> BasicInteger& {
-			shift_right_mut(shift);
+			return shift_right_mut(shift);
+		}
+
+		constexpr auto abs_mut() noexcept -> BasicInteger& {
+			set_is_neg(false);
 			return *this;
 		}
 
-		constexpr auto abs_mut() noexcept -> void {
-			set_is_neg(false);
-		}
-
-		[[nodiscard]] constexpr auto abs() const -> BasicInteger {
+		constexpr auto abs() const -> BasicInteger {
 			auto temp = *this;
 			temp.abs_mut();
 			return temp;
@@ -529,6 +622,8 @@ namespace dark::internal {
 			auto bit = block_t{flag};
 			if (flag) block |= (bit << pos);
 			else block &= ~(bit << pos);
+
+			trim_zero();
 		}
 
 		constexpr auto get_bit(std::size_t pos) const noexcept -> bool {
@@ -538,12 +633,21 @@ namespace dark::internal {
 			auto block = m_data[index];
 			return (block >> pos) & 1; 
 		}
+
+		constexpr auto is_power_of_two() const noexcept -> bool {
+			if (is_zero()) return true;
+			for (auto i = 0zu; i < size() - 1; ++i) {
+				if (m_data[i] != 0) return false;
+			}	
+			auto b = m_data.back();
+			return !(b & (b - 1));
+		}
 	private:
 		static constexpr auto shift_left_helper(
 			BasicInteger& out,
 			std::size_t shift,
 			bool should_extend
-		) noexcept -> void {
+		) -> void {
 			if (should_extend) {
 				auto const diff_bits = shift;
 				auto const diff_size = (diff_bits + BlockInfo::total_bits - 1) / BlockInfo::total_bits;
@@ -558,6 +662,19 @@ namespace dark::internal {
 			std::size_t shift
 		) noexcept -> void {
 			logical_right_shift(out.data(), out.size(), shift);
+			out.trim_zero();
+		}
+
+		static constexpr auto bitwise_op_helper(
+			BasicInteger& out,
+			BasicInteger const& mask,
+			auto&& fn
+		) -> void {
+			auto const size = std::max(out.size(), mask.size());
+			out.resize(size);
+			for (auto i = 0zu; i < size; ++i) {
+				out.m_data[i] = fn(out.m_data[i], mask.m_data[i]);
+			}
 			out.trim_zero();
 		}
 		
@@ -658,6 +775,7 @@ namespace dark::internal {
 			// Case 2: +ve - (+ve)
 			//			= +ve - +ve
 			is_neg = ls;
+			/*std::println("{} | {} => {} {}", *a, *b, a->bits(), b->bits());*/
 
 			auto size = std::min(a->size(), b->size());
 		
@@ -702,16 +820,36 @@ namespace dark::internal {
 			impl::NTT::mul(res->data(), size << 1, a->data(), a->size(), b->data(), b->size(), size);
 		}
 
+		static constexpr auto mul_power_of_two(
+			BasicInteger& res,
+			BasicInteger const& a,
+			BasicInteger const& pow_2
+		) -> void {
+			res = a;
+			auto b = pow_2.m_data.back();
+			auto k = static_cast<std::size_t>(std::bit_width(b)) + (pow_2.size() - 1) * BlockInfo::total_bits;
+			res.shift_left_mut(k, true);
+		}
+
 		static constexpr auto mul_impl(
 			BasicInteger* res,
 			BasicInteger const* a,
 			BasicInteger const* b,
 			MulKind kind
-		) noexcept -> void {
+		) -> void {
 			if (a->is_zero() || b->is_zero()) {
 				res->m_data.clear();
 				res->m_bits = 0;
 				res->m_flags = 0;
+				return;
+			}
+			
+			// fast-path
+			if (a->is_power_of_two()) {
+				mul_power_of_two(*res, *b, *a); 
+				return;
+			} else if (b->is_power_of_two()) {
+				mul_power_of_two(*res, *a, *b);
 				return;
 			}
 
@@ -778,18 +916,48 @@ namespace dark::internal {
 			BasicInteger const& num,
 			BasicInteger const& den,
 			DivKind kind
-		) noexcept -> void {
+		) -> void {
+			if (den.is_zero()) return;
+			if (num.is_zero()) return;
+			if (den.bits() > num.bits()) {
+				rem = num;
+				return;
+			}
+
+			// NOTE: Fast path
+			if (den.is_power_of_two()) {
+				auto bits = den.bits() - 1; 
+				quot = num;
+				quot.shift_right_mut(bits - 1);
+				auto blocks = bits / BlockInfo::total_bits;
+				auto extra = bits % BlockInfo::total_bits;
+				auto has_extra = static_cast<bool>(extra);
+				rem.resize(blocks + has_extra);
+				
+				for (auto i = 0zu; i < blocks; ++i) {
+					rem.m_data[i] = num.m_data[i];
+				}
+				
+				if (has_extra) {
+					block_t const mask = (1 << extra) - 1;
+					rem.m_data[blocks] = num.m_data[blocks] & mask; 
+				}
+				
+				quot.trim_zero();
+				rem.trim_zero();
+
+				return;
+			}
+
 			quot.resize(num.size(), 0);
 			rem.resize(num.size(), 0);
 			quot.m_bits = num.bits();
 			rem.m_bits = num.bits();
+
 			
 			switch(kind) {
-				case DivKind::LongDiv:
+				case DivKind::LongDiv: case DivKind::Auto:
 					integer::long_div(num, den, quot, rem);
-					break;
-				case DivKind::NewtonRaphson:
-					integer::newton_raphson_div(num, den, quot, rem);
 					break;
 				default: break;
 			}

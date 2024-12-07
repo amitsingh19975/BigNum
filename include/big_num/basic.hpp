@@ -42,8 +42,6 @@ namespace dark {
 	enum class DivKind {
 		Auto,
 		LongDiv,
-		NewtonRaphson,
-		LargeInteger
 	};
 
 	struct BigNumFlag {
