@@ -440,10 +440,11 @@ namespace dark::internal {
 			if (separator) {
 				auto temp = std::string();
 				auto sep = *separator;
-				temp.reserve(s.size() + s.size() / 3);
-				for (auto i = 0zu; i < s.size(); i += 3) {
-					temp.append(s.substr(i, 3));
-					if (i + 3 < s.size()) temp.push_back(sep);
+				auto const sep_factor = radix == Radix::Dec ? 3zu : 4zu;
+				temp.reserve(s.size() + s.size() / sep_factor);
+				for (auto i = 0zu; i < s.size(); i += sep_factor ) {
+					temp.append(s.substr(i, sep_factor));
+					if (i + sep_factor < s.size()) temp.push_back(sep);
 				}
 				s = std::move(temp);
 			}
