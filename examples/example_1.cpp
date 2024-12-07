@@ -5,11 +5,11 @@
 int main() {
 
     // mul: 0x1e49629297809a2a504978d7f7834d04839d3a13be7ec1a9625b4b26cd0f81fb109e63c50c11685312c257fa0698c6cd7e22e52
-    auto lhs = dark::BigInteger("827394650391827364598273645982736459827364598273645982736459827364598273645982736459982");
-    auto rhs = dark::BigInteger("0x1234567890abcdef0123456789abdef");
+    auto lhs = dark::BigInteger("1512366075009453295483730155710103023");
+    auto rhs = dark::BigInteger("256");
+    auto res = lhs.div(rhs);
+    auto [q, r] = res;
 
-    auto res = lhs.div(rhs, dark::DivKind::LongDiv);
-    auto [quot, rem] = res;
-    std::println("Q: {}, R: {}", quot, rem);
+    std::println("{:0_b} / {} = {}, {}", lhs, rhs, q, r);
     return 0;
 }
