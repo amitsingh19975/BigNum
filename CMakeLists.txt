@@ -24,8 +24,8 @@ if(ENABLE_PCH)
     target_precompile_headers(project_options INTERFACE <vector> <string> <map> <utility>)
 endif(ENABLE_PCH)
 
-add_library(diagnostics_core INTERFACE)
-target_include_directories(diagnostics_core INTERFACE include)
+add_library(big_num_core INTERFACE)
+target_include_directories(big_num_core INTERFACE include)
 
 option(ENABLE_TESTING "Enable Test Builds" ON)
 
