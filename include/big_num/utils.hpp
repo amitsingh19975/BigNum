@@ -1,7 +1,7 @@
 #ifndef DARK_BIG_NUM_UTILS_HPP
 #define DARK_BIG_NUM_UTILS_HPP
 
-#include "big_num/block_info.hpp"
+#include "block_info.hpp"
 #include <concepts>
 #include <cstdint>
 #include <cstdlib>
@@ -68,15 +68,14 @@ namespace dark::utils {
 		return output_size + 1;
 	}
 
-
 	inline static constexpr auto convert_to_block_radix(
 		internal::BlockInfo::type* out,
 		std::string_view num,
-		std::uint8_t from_radix
+		std::size_t from_radix
 	) noexcept -> std::size_t {
 		return basic_convert_to_block_radix<internal::BlockInfo::max_value>(
 			out,
-			static_cast<std::size_t>(from_radix),
+			from_radix,
 			num.size(),
 			[&num](std::size_t i) {
 				return static_cast<internal::BlockInfo::accumulator_t>(radix_mapping[static_cast<std::size_t>(num[i])]); 

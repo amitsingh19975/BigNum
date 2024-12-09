@@ -20,8 +20,10 @@
 #include <optional>
 #include <expected>
 #include "big_num/bitwise.hpp"
+#include "big_num/converter.hpp"
 #include "big_num/division.hpp"
 #include "big_num/ntt.hpp"
+#include "big_num/type_traits.hpp"
 #include "block_info.hpp"
 #include "utils.hpp"
 #include "mul.hpp"
@@ -104,6 +106,12 @@ namespace dark::internal {
 			std::fill(m_data.begin(), m_data.end(), 0);
 		}
 
+		constexpr auto reset_ou_flags() noexcept {
+			auto neg = is_neg();
+			m_flags = 0;
+			set_is_neg(neg);
+		}
+
 		static auto from(
 			std::string_view num,
 			Radix radix = Radix::None
@@ -136,27 +144,10 @@ namespace dark::internal {
 			auto validate_result = validate_digits(num, infered_radix);
 			if (!validate_result.has_value()) return std::unexpected(std::move(validate_result.error()));
 
-			std::vector<block_t> result(num.size(), 0);
-
-			utils::convert_to_block_radix(result.data(), num, static_cast<std::uint8_t>(infered_radix));	
-
-			while (!result.empty() && result.back() == 0) {
-				result.pop_back();
-			}
-
 			auto res = BasicInteger{};
-			res.set_zero();
-			auto bits = std::size_t{};
-
-			if (!result.empty()) {
-				auto c = static_cast<std::size_t>(std::bit_width(result.back()));
-				bits = (result.size() - 1) * BlockInfo::total_bits + c;
-			}
-			res.m_bits = bits;
-			res.m_data.resize(result.size(), block_t{});
-
-			std::copy_n(result.begin(), res.size(), res.begin());
+			base_convert(res, num, infered_radix);
 			res.set_is_neg(is_neg);
+			res.trim_zero();
 			
 			return res;
 		}
@@ -198,6 +189,7 @@ namespace dark::internal {
 			}
 
 			res.set_is_neg(is_neg);
+			res.trim_zero();
 			return res;
 		}
 
@@ -237,7 +229,6 @@ namespace dark::internal {
 			add_impl(this, this, &other);
 			return *this;
 		}
-
 
 		constexpr auto sub(BasicInteger const& other) const -> BasicInteger {
 			auto res = *this;
@@ -611,6 +602,11 @@ namespace dark::internal {
 			return false;
 		}
 
+		constexpr auto is_one() const noexcept -> bool {
+			if (size() == 1) return m_data[0] == 1;
+			return false;
+		}
+
 		constexpr auto set_bit(std::size_t pos, bool flag, bool should_expand = false) -> void {
 			auto index = pos / BlockInfo::total_bits;
 			if (index >= size()) {
@@ -642,6 +638,37 @@ namespace dark::internal {
 			}	
 			auto b = m_data.back();
 			return !(b & (b - 1));
+		}
+
+		constexpr auto trim_zero() noexcept -> void {
+			while (!m_data.empty() && m_data.back() == 0) m_data.pop_back();
+			if (m_data.empty()) {
+				set_is_neg(false);
+				m_bits = 0;
+				m_flags = 0;
+				return;
+			}
+			auto bits = static_cast<std::size_t>(std::bit_width(m_data.back()));
+			m_bits = (size() - 1) * BlockInfo::total_bits + bits;
+		}
+
+		constexpr auto pow(std::size_t pow) -> BasicInteger {
+			auto res = *this;
+			res.pow_mut(pow);
+			return res;
+		}
+
+		constexpr auto pow_mut(std::size_t pow) -> BasicInteger& {
+			if (pow == 0) {
+				m_data.clear();
+				m_data.push_back(1);
+				m_bits = 1;
+				m_flags = 0;
+				return *this;
+			}
+
+			exponential_pow(*this, pow);
+			return *this;
 		}
 	private:
 		static constexpr auto shift_left_helper(
@@ -698,6 +725,21 @@ namespace dark::internal {
 			else if (bits() > other.bits()) return false;
 			return compare(other, std::less<>{});
 		} 
+
+		constexpr auto exponential_pow(BasicInteger& out, std::size_t pow) -> void {
+			auto res = BasicInteger{};
+			res.m_data.reserve(out.size() * pow);
+			res.m_data.push_back(1);
+			res.m_bits = 1;
+			while (pow) {
+				if (pow & 1) res.mul_mut(out);
+				out = out * out;
+				pow >>= 1;
+			}
+			out = std::move(res);
+			out.trim_zero();
+			out.reset_ou_flags();
+		}
 
 		static constexpr auto add_impl(
 			BasicInteger* res,
@@ -827,9 +869,7 @@ namespace dark::internal {
 			BasicInteger const& pow_2
 		) -> void {
 			res = a;
-			auto b = pow_2.m_data.back();
-			auto k = static_cast<std::size_t>(std::bit_width(b)) + (pow_2.size() - 1) * BlockInfo::total_bits;
-			res.shift_left_mut(k, true);
+			res.shift_left_mut(pow_2.bits() - 1, true);
 		}
 
 		static constexpr auto mul_impl(
@@ -842,6 +882,18 @@ namespace dark::internal {
 				res->m_data.clear();
 				res->m_bits = 0;
 				res->m_flags = 0;
+				return;
+			}
+
+			if (a->is_one()) {
+				*res = *b;
+				res->reset_ou_flags();
+				return;
+			}
+
+			if (b->is_one()) {
+				*res = *a;
+				res->reset_ou_flags();
 				return;
 			}
 			
@@ -894,7 +946,7 @@ namespace dark::internal {
 					b
 				);
 			};
-			
+
 			switch (kind) {
 				case MulKind::Auto: {
 					if (a_size <= naive_threshold && b_size <= naive_threshold) naive_mul_impl();
@@ -966,16 +1018,6 @@ namespace dark::internal {
 			rem.trim_zero();
 		}
 
-		constexpr auto trim_zero() noexcept -> void {
-			while (!m_data.empty() && m_data.back() == 0) m_data.pop_back();
-			if (m_data.empty()) {
-				set_is_neg(false);
-				m_bits = 0;
-				return;
-			}
-			auto bits = static_cast<std::size_t>(std::bit_width(m_data.back()));
-			m_bits = (size() - 1) * BlockInfo::total_bits + bits;
-		}
 
 
 	private:
@@ -1130,6 +1172,10 @@ namespace dark::internal {
 			if (s) m_flags |= flag;
 			else m_flags &= ~flag;
 		}
+	private:
+		template <typename I>	
+		friend constexpr auto naive_base_convert(is_basic_integer auto&, std::string_view, std::size_t) -> void;
+
 	private:
 		base_type		m_data;
 		size_type		m_bits{};

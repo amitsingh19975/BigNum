@@ -4,6 +4,7 @@
 #include "block_info.hpp"
 #include <algorithm>
 #include <cassert>
+#include <span>
 
 namespace dark::internal::integer {
 	
@@ -140,8 +141,6 @@ namespace dark::internal::integer {
 
 		constexpr auto next_buff_len = MaxBuffLen >= 32 ? (MaxBuffLen >> 1) : MaxBuffLen;
 
-
-		
 		// lhs * rhs = z2 * (2^b)^2 + z1 * (2^b) + z0
 		// z0 = x_l * y_l
 		// z1 = z3 - z0 - z2
@@ -194,6 +193,10 @@ namespace dark::internal::integer {
 		safe_add_helper(out + half, z3, mid_size * 2);
 		safe_add_helper(out + size, z2, high * 2);
 
+		/*std::println("z0: {}", std::span(z0, half << 1));*/
+		/*std::println("z2: {}", std::span(z2, high << 1));*/
+		/*std::println("z3: {}\n\n", std::span(z3, mid_size << 1));*/
+
 		auto borrow = acc_t{};
 		for (auto i = 0zu; i < mid_size * 2; ++i) {
 			auto sub = acc_t{z0[i]} + acc_t{z2[i]} + borrow;
@@ -221,6 +224,8 @@ namespace dark::internal::integer {
 
 		std::copy_n(lhs, std::min(MaxLen, lhs_size), buff_a);
 		std::copy_n(rhs, std::min(MaxLen, rhs_size), buff_b);
+
+		/*std::println("lhs: {},\nrhs: {}\n\n", std::span(buff_a, lhs_size), std::span(buff_b, rhs_size));*/
 
 		auto size =	std::max(lhs_size, rhs_size);
 		size += (size & 1);
