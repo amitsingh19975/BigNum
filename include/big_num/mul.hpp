@@ -157,8 +157,6 @@ namespace dark::internal::integer {
 		auto const low = half;
 		auto const high = size - half;
 
-		std::println("{}, {}, {}\n", size, low, high);
-
 		auto xl = lhs;
 		auto xu = lhs + half;
 		auto yl = rhs;
@@ -193,13 +191,9 @@ namespace dark::internal::integer {
 			y_sum[i] = y;
 		}
 
-		std::println("{}: xl: {}\nxu: {}\nyl: {}\nyu: {}\nxs: {}\nys: {}\n", depth, std::span(xl, low), std::span(xu, mid_size), std::span(yl, low), std::span(yu, mid_size), std::span(x_sum, mid_size), std::span(y_sum, mid_size));
 		karatsuba_mul_helper<next_buff_len>(z0, xl, yl, low, depth + 1);
 		karatsuba_mul_helper<next_buff_len>(z2, xu, yu, high, depth + 1);
 		karatsuba_mul_helper<next_buff_len>(z3, x_sum, y_sum, mid_size, depth + 1);
-
-		std::println("\n======={}========", depth);
-		std::println("z0: {}\nz2: {}\nz3: {}\n", std::span(z0, low << 1), std::span(z2, high << 1), std::span(z3, mid_size << 1));
 
 		safe_add_helper(out + 0, z0, low * 2);
 		safe_add_helper(out + half, z3, mid_size * 2);
@@ -232,8 +226,6 @@ namespace dark::internal::integer {
 
 		std::copy_n(lhs, std::min(MaxLen, lhs_size), buff_a);
 		std::copy_n(rhs, std::min(MaxLen, rhs_size), buff_b);
-
-		std::println("lhs: {},\nrhs: {}\n\n", std::span(buff_a, lhs_size), std::span(buff_b, rhs_size));
 
 		auto size =	std::max(lhs_size, rhs_size);
 		size += (size & 1);
