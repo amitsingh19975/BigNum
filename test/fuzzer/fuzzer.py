@@ -121,16 +121,16 @@ def test_parse(max_len: int) -> None:
     len = 1
     seed("BigNum")
     while True:
-        len = 1211 #randint(1, max_len)
+        len *= 10 #randint(1, max_len)
         print(f"Testing for number that has length: {len}")
         
-        # num = random_number(2, len)
-        # if not test_parse_helper(path, num):
-        #     break
-        #
-        # num = random_number(8, len)
-        # if not test_parse_helper(path, num):
-        #     break
+        num = random_number(2, len)
+        if not test_parse_helper(path, num):
+            break
+
+        num = random_number(8, len)
+        if not test_parse_helper(path, num):
+            break
 
         num = random_number(10, len)
         if not test_parse_helper(path, num):
