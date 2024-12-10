@@ -818,7 +818,6 @@ namespace dark::internal {
 			// Case 2: +ve - (+ve)
 			//			= +ve - +ve
 			is_neg = ls;
-			/*std::println("{} | {} => {} {}", *a, *b, a->bits(), b->bits());*/
 
 			auto size = std::min(a->size(), b->size());
 		
@@ -827,18 +826,14 @@ namespace dark::internal {
 			auto const* b_data = b->m_data.data();
 
 			for (; i < size; ++i) {
-				auto minuend = static_cast<block_acc_t>(a_data[i]);
-				auto subtrahend = static_cast<block_acc_t>(b_data[i]) + borrow;
-				auto [acc, br] = integer::safe_sub_helper(minuend, subtrahend);
+				auto [acc, br] = integer::safe_sub_helper(a_data[i], b_data[i], borrow);
 				lhs[i] = acc;
 				borrow = br;
 			}
 
 			size = a->size();
 			for (; i < size; ++i) {
-				auto minuend = static_cast<block_acc_t>(a_data[i]);
-				auto subtrahend = borrow;
-				auto [acc, br] = integer::safe_sub_helper(minuend, subtrahend);
+				auto [acc, br] = integer::safe_sub_helper(a_data[i], borrow);
 				lhs[i] = acc;
 				borrow = br;
 			}

@@ -4,11 +4,12 @@
 #include "block_info.hpp"
 #include <algorithm>
 #include <cassert>
+#include <print>
 #include <span>
 
 namespace dark::internal::integer {
 	
-	inline constexpr auto safe_add_helper(
+	inline static constexpr auto safe_add_helper(
 		BlockInfo::accumulator_t lhs,
 		BlockInfo::accumulator_t rhs
 	) noexcept -> std::pair<BlockInfo::type, BlockInfo::type> {
@@ -18,7 +19,7 @@ namespace dark::internal::integer {
 		return {res, carry};
 	}
 
-	inline constexpr auto safe_add_helper(
+	inline static constexpr auto safe_add_helper(
 		BlockInfo::type* out,
 		std::size_t index,
 		std::size_t size,
@@ -33,7 +34,7 @@ namespace dark::internal::integer {
 		return carry;
 	}
 
-	inline constexpr auto safe_add_helper(
+	inline static constexpr auto safe_add_helper(
 		BlockInfo::type* out,
 		BlockInfo::type const* a,
 		std::size_t size,
@@ -48,17 +49,23 @@ namespace dark::internal::integer {
 		return carry;
 	}
 	
-	inline constexpr auto safe_sub_helper(
+	inline static constexpr auto safe_sub_helper(
 		BlockInfo::accumulator_t lhs,
-		BlockInfo::accumulator_t rhs
+		BlockInfo::accumulator_t rhs,
+		BlockInfo::accumulator_t prev_borrow = 0
 	) noexcept -> std::pair<BlockInfo::type, BlockInfo::type> {
-		auto acc = lhs - rhs;
-		auto res = acc & BlockInfo::lower_mask;
-		auto borrow = (acc >> (BlockInfo::total_acc_bits - 1)) & 1;
-		return {res, borrow};
+		// 00 * 10^0 + 00 * 10^1 + 00 * 10^2 + 01 * 10^3
+		// 01 * 10^0
+		// (10 + 0 - 1) * 10^0 + (10 + 0 - 1) * 10^1 + (10 + 0 - 1) * 10^2 + (1 - 1) * 10^3 
+		auto const borrow1 = (lhs < prev_borrow);
+		auto const new_lhs = lhs + borrow1 * BlockInfo::max_value - prev_borrow;
+		auto const borrow2 = new_lhs < rhs;
+		auto const acc = new_lhs + borrow2 * BlockInfo::max_value - rhs;
+		auto const res = acc & BlockInfo::lower_mask;
+		return {res, borrow1 | borrow2};
 	}
 	
-	inline constexpr auto safe_sub_helper(
+	inline static constexpr auto safe_sub_helper(
 		BlockInfo::type* out,
 		std::size_t index,
 		std::size_t size,
@@ -73,7 +80,7 @@ namespace dark::internal::integer {
 		return borrow;
 	}
 	
-	inline constexpr auto safe_sub_helper(
+	inline static constexpr auto safe_sub_helper(
 		BlockInfo::type* out,
 		BlockInfo::type const* a,
 		std::size_t size,
@@ -81,14 +88,14 @@ namespace dark::internal::integer {
 	) noexcept -> BlockInfo::accumulator_t {
 		auto borrow = BlockInfo::accumulator_t{};
 		for (auto i = 0zu; i < size; ++i) {
-			auto [acc, c] = safe_sub_helper(out[i + offset], a[i] + borrow);
+			auto [acc, c] = safe_sub_helper(out[i + offset], a[i], borrow);
 			out[i + offset] = acc;
 			borrow = c;
 		}
 		return borrow;
 	}
 
-	constexpr auto naive_mul(
+	inline static constexpr auto naive_mul(
 		BlockInfo::type* out,
 		std::size_t out_size,
 		BlockInfo::type const* lhs,
@@ -112,12 +119,10 @@ namespace dark::internal::integer {
 			for (auto j = 0zu; j < rhs_size; ++j) {
 				BlockInfo::accumulator_t r = rhs[j];
 
-				auto mul = l * r;
-				auto first_add = safe_add_helper(mul, carry);
-				auto [acc, c] = safe_add_helper(out[i + j], first_add.first);
+				auto [acc, c] = safe_add_helper(out[i + j], l * r + carry);
 
 				out[i + j] = acc;
-				carry = (c + first_add.second) & BlockInfo::lower_mask;
+				carry = c;
 			}
 			
 			safe_add_helper(out, rhs_size + i, out_size, carry);
@@ -125,11 +130,12 @@ namespace dark::internal::integer {
 	}
 
 	template <std::size_t MaxBuffLen, std::size_t NaiveThreshold = 32>
-	constexpr auto karatsuba_mul_helper(
+	inline static constexpr auto karatsuba_mul_helper(
 		BlockInfo::type* out,
 		BlockInfo::type const* lhs,
 		BlockInfo::type const* rhs,
-		std::size_t size
+		std::size_t size,
+		std::size_t depth = 0
 	) noexcept -> void {
 		using block_t = typename BlockInfo::type;
 		using acc_t = typename BlockInfo::accumulator_t;
@@ -150,6 +156,8 @@ namespace dark::internal::integer {
 		auto const half = size >> 1;
 		auto const low = half;
 		auto const high = size - half;
+
+		std::println("{}, {}, {}\n", size, low, high);
 
 		auto xl = lhs;
 		auto xu = lhs + half;
@@ -184,33 +192,33 @@ namespace dark::internal::integer {
 			x_sum[i] = x;
 			y_sum[i] = y;
 		}
-		
-		karatsuba_mul_helper<next_buff_len>(z0, xl, yl, low);
-		karatsuba_mul_helper<next_buff_len>(z2, xu, yu, high);
-		karatsuba_mul_helper<next_buff_len>(z3, x_sum, y_sum, mid_size);
-	
+
+		std::println("{}: xl: {}\nxu: {}\nyl: {}\nyu: {}\nxs: {}\nys: {}\n", depth, std::span(xl, low), std::span(xu, mid_size), std::span(yl, low), std::span(yu, mid_size), std::span(x_sum, mid_size), std::span(y_sum, mid_size));
+		karatsuba_mul_helper<next_buff_len>(z0, xl, yl, low, depth + 1);
+		karatsuba_mul_helper<next_buff_len>(z2, xu, yu, high, depth + 1);
+		karatsuba_mul_helper<next_buff_len>(z3, x_sum, y_sum, mid_size, depth + 1);
+
+		std::println("\n======={}========", depth);
+		std::println("z0: {}\nz2: {}\nz3: {}\n", std::span(z0, low << 1), std::span(z2, high << 1), std::span(z3, mid_size << 1));
+
 		safe_add_helper(out + 0, z0, low * 2);
 		safe_add_helper(out + half, z3, mid_size * 2);
-		safe_add_helper(out + size, z2, high * 2);
+		safe_add_helper(out + (half << 1), z2, high * 2);
 
-		/*std::println("z0: {}", std::span(z0, half << 1));*/
-		/*std::println("z2: {}", std::span(z2, high << 1));*/
-		/*std::println("z3: {}\n\n", std::span(z3, mid_size << 1));*/
 
-		auto borrow = acc_t{};
-		for (auto i = 0zu; i < mid_size * 2; ++i) {
-			auto sub = acc_t{z0[i]} + acc_t{z2[i]} + borrow;
-			auto [acc, b] = safe_sub_helper(out[i + half], sub);
-			out[i + half] = acc;
-			borrow = b;
+		auto sz = (mid_size << 1) + 1;
+		safe_add_helper(z0, z2, sz);
+
+		auto b = acc_t{};
+		for (auto i = 0zu; i < sz; ++i) {
+			auto [v, bb] = safe_sub_helper(out[i + half], z0[i], b);
+			out[i + half] = v;
+			b = bb;
 		}
-
-		out[mid_size << 1] -= borrow;
-		
 	}
 
 	template <std::size_t MaxLen, std::size_t NaiveThreshold = 32>
-	constexpr auto karatsuba_mul(
+	inline static constexpr auto karatsuba_mul(
 		BlockInfo::type* out,
 		[[maybe_unused]] std::size_t out_size,
 		BlockInfo::type const* lhs,
@@ -225,7 +233,7 @@ namespace dark::internal::integer {
 		std::copy_n(lhs, std::min(MaxLen, lhs_size), buff_a);
 		std::copy_n(rhs, std::min(MaxLen, rhs_size), buff_b);
 
-		/*std::println("lhs: {},\nrhs: {}\n\n", std::span(buff_a, lhs_size), std::span(buff_b, rhs_size));*/
+		std::println("lhs: {},\nrhs: {}\n\n", std::span(buff_a, lhs_size), std::span(buff_b, rhs_size));
 
 		auto size =	std::max(lhs_size, rhs_size);
 		size += (size & 1);
