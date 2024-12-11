@@ -4,8 +4,6 @@
 #include "block_info.hpp"
 #include <algorithm>
 #include <cassert>
-#include <print>
-#include <span>
 
 namespace dark::internal::integer {
 	
@@ -162,33 +160,46 @@ namespace dark::internal::integer {
 		auto yl = rhs;
 		auto yu = rhs + half;
 
-		block_t z0[MaxBuffLen << 1] = {0};
-		block_t z2[MaxBuffLen << 1] = {0};
-		block_t z3[MaxBuffLen << 1] = {0};
-		block_t x_sum[MaxBuffLen] = {0};
-		block_t y_sum[MaxBuffLen] = {0};
+		constexpr auto buff_len = MaxBuffLen + 2;
+
+		block_t z0[buff_len << 1] = {0};
+		block_t z2[buff_len << 1] = {0};
+		block_t z3[buff_len << 1] = {0};
+		block_t x_sum[buff_len] = {0};
+		block_t y_sum[buff_len] = {0};
 
 		auto l_carry = acc_t{};
 		auto r_carry = acc_t{};
-		for (auto i = 0zu; i < half; ++i) {
-			auto [x, xc] = safe_add_helper(xl[i], xu[i] + l_carry);
-			auto [y, yc] = safe_add_helper(yl[i], yu[i] + r_carry);
-			l_carry = xc;
-			r_carry = yc;
 
-			x_sum[i] = x;
-			y_sum[i] = y;
+		{
+			auto i = 0zu;
+			for (; i < half; ++i) {
+				auto [x, xc] = safe_add_helper(xl[i], xu[i] + l_carry);
+				auto [y, yc] = safe_add_helper(yl[i], yu[i] + r_carry);
+				l_carry = xc;
+				r_carry = yc;
+
+				x_sum[i] = x;
+				y_sum[i] = y;
+			}
+		
+
+			for (; i < high; ++i) {
+				auto [x, xc] = safe_add_helper(xu[i], l_carry);
+				auto [y, yc] = safe_add_helper(yu[i], r_carry);
+
+				x_sum[i] = x;
+				l_carry = xc;
+
+				y_sum[i] = y;
+				r_carry = yc;
+			}
 		}
 		
-		auto const mid_size = high;
-		for (auto i = half; i < mid_size; ++i) {
-			auto [x, xc] = safe_add_helper(xu[i], l_carry);
-			auto [y, yc] = safe_add_helper(yu[i], r_carry);
-			l_carry = xc;
-			r_carry = yc;
-
-			x_sum[i] = x;
-			y_sum[i] = y;
+		auto const mid_size = high + static_cast<bool>(l_carry | r_carry);
+		if (mid_size > high) {
+			x_sum[high] = l_carry & BlockInfo::lower_mask;
+			y_sum[high] = r_carry & BlockInfo::lower_mask;
 		}
 
 		karatsuba_mul_helper<next_buff_len>(z0, xl, yl, low, depth + 1);
@@ -200,8 +211,9 @@ namespace dark::internal::integer {
 		safe_add_helper(out + (half << 1), z2, high * 2);
 
 
-		auto sz = (mid_size << 1) + 1;
+		auto sz = (high << 1) + 1;
 		safe_add_helper(z0, z2, sz);
+
 
 		auto b = acc_t{};
 		for (auto i = 0zu; i < sz; ++i) {
