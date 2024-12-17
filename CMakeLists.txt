@@ -21,7 +21,7 @@ include(cmake/StaticAnalyzers.cmake)
 
 option(ENABLE_PCH "Enable Precompiled Headers" OFF)
 if(ENABLE_PCH)
-    target_precompile_headers(project_options INTERFACE <vector> <string> <map> <utility>)
+    target_precompile_headers(project_options INTERFACE <vector> <string> <map> <utility> <unordered_map> <unordered_set> <list>)
 endif(ENABLE_PCH)
 
 add_library(big_num_core INTERFACE)

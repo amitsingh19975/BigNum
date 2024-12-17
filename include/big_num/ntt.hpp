@@ -69,13 +69,10 @@ namespace dark::internal::impl {
 	};
 
 	static inline auto bit_rev_permutation(std::vector<std::size_t>& out, std::size_t n) {
-		if (n == 0) return;
-
-		auto const bits = static_cast<std::size_t>(std::bit_width(n)) - 1;
+		auto const bits = static_cast<std::size_t>(std::countr_zero(n));
 
 		for (auto i = 0zu; i < n; ++i) {
-			out[i] = out[i >> 1] >> 1;
-			if (i & 1) out[i] |= (1 << (bits - 1));
+			out[i] = (i & 1) * (1 << (bits - 1)) | (out[i>>1] >> 1);
 		}
 	}
 
@@ -91,9 +88,10 @@ namespace dark::internal::impl {
 			, m_permutation(m_size, 0)
 			, m_W(m_size, mon.transform(1)) // Store both root [0, n / 2) and inverse root [n / 2, n)
 			, m_inv_n(mon.transform(binary_pow(static_cast<type>(m_size), BlockInfo::mod - 2)))
-			, m_root(mon.transform(binary_pow(BlockInfo::generator, (BlockInfo::mod - 1) / m_size)))
+			, m_root(mon.transform(binary_pow(BlockInfo::generator, (BlockInfo::mod - 1) >> (std::countr_zero(m_size)))))
 			, m_inv_root(mon.transform(binary_pow(mon.reduce(m_root), BlockInfo::mod - 2)))
 		{
+			
 			precomputeW(mon);
 			bit_rev_permutation(m_permutation, m_size);
 		}
@@ -106,31 +104,30 @@ namespace dark::internal::impl {
 				n <<= 1;
 			}
 			
-			if (n & (n - 1)) return n;
 			n <<= 1;
 
 			return n;
 		}
 
 		static auto mul(
-			type* out,
-			[[maybe_unused]] std::size_t on,
-			type const* a,
-			std::size_t na,
-			type const* b,
-			std::size_t nb,
-			std::size_t n
+			BlockInfo::blocks_t& out,
+			BlockInfo::blocks_t const& a,
+			BlockInfo::blocks_t const& b
 		) -> void {
-			assert(2*n == on && "output size must be twice that of next power of two of the operands.");
 
+			auto n = calculate_max_operands_size(a.size(), b.size());
+			out.resize(n << 1);
+			auto const na = a.size();
+			auto const nb = b.size();
 			n = std::max(cal_block_size(na, n), cal_block_size(nb, n));
+			
 			std::vector<type> va(n, 0);
 			std::vector<type> vb(n, 0);
-			std::vector<type> res(n << 1, 0);
+			std::vector<type> res(n, 0);
 
 			Montgomery mon;
-			copy_to_half_block(mon, va.data(), a, na);
-			copy_to_half_block(mon, vb.data(), b, nb);
+			copy_to_half_block(mon, va.data(), a.data(), na);
+			copy_to_half_block(mon, vb.data(), b.data(), nb);
 
 
 			auto const ntt = NTT(mon, n);
@@ -143,7 +140,7 @@ namespace dark::internal::impl {
 
 			ntt(mon, res.data(), true);
 
-			copy_to_full_block(mon, out, res.data(), res.size());
+			copy_to_full_block(mon, out.data(), res.data(), res.size());
 		}
 	private:
 		auto operator()(
@@ -153,12 +150,15 @@ namespace dark::internal::impl {
 		) const noexcept -> void {
 			
 			for (auto i = 0zu; i < m_size; ++i) {
-				if (i >= m_permutation[i]) continue;
-				std::swap(data[i], data[m_permutation[i]]);
+				auto const p = m_permutation[i];
+				if (i < p) {
+					std::swap(data[i], data[p]);
+				}
 			}
 
-			auto const bits = static_cast<std::size_t>(std::bit_width(m_size)) - 1;
+			auto const bits = static_cast<std::size_t>(std::countr_zero(m_size));
 			auto const ws = m_W.data() + (is_inverse ? (m_size >> 1) : 0zu); 
+			
 			
 			for (auto i = 0zu; i < bits; ++i) {
 				auto const pos = 1zu << i;
@@ -170,10 +170,13 @@ namespace dark::internal::impl {
 					auto w_idx = w_f * w_s;
 					auto w = ws[w_idx];
 
-					acc_t t = mon.multply(el, w);
+					acc_t const t = mon.multply(el, w);
+
 					auto& ej = data[j];
-					el = (ej >= t ? ej - t : ej + BlockInfo::mod - t) & BlockInfo::ntt_lower_mask;
-					ej = (ej + t < BlockInfo::mod ? ej + t : ej + (t - BlockInfo::mod)) & BlockInfo::ntt_lower_mask;
+					el = (ej + BlockInfo::mod * (ej < t) - t) & BlockInfo::ntt_lower_mask;
+
+					auto const temp_sum = ej + t;
+					ej = (temp_sum - BlockInfo::mod * (temp_sum > BlockInfo::mod)) & BlockInfo::ntt_lower_mask;
 				}
 			}
 
@@ -188,7 +191,7 @@ namespace dark::internal::impl {
 			Montgomery const& mon
 		) -> void {
 			auto const half = m_size >> 1;
-			
+
 			// Calculate roots: w^0, w^1, w^2, ....
 			for (auto i = 1zu; i < half; ++i) {
 				m_W[i] = mon.multply(m_W[i - 1], m_root);
@@ -235,6 +238,7 @@ namespace dark::internal::impl {
 				auto temp = (high << Montgomery::half_bits) | low;
 				out[j++] = temp;
 			}
+			out[j] = carry & BlockInfo::lower_mask;
 		}
 
 	private:

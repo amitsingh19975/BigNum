@@ -1,6 +1,7 @@
 #ifndef DARK_BIG_NUM_MUL_HPP
 #define DARK_BIG_NUM_MUL_HPP
 
+#include "dyn_array.hpp"
 #include "block_info.hpp"
 #include <algorithm>
 #include <cassert>
@@ -18,13 +19,11 @@ namespace dark::internal::integer {
 	}
 
 	inline static constexpr auto safe_add_helper(
-		BlockInfo::type* out,
-		std::size_t index,
-		std::size_t size,
+		BlockInfo::blocks_t& out,
 		BlockInfo::accumulator_t val
 	) noexcept -> BlockInfo::accumulator_t {
 		auto carry = val;
-		for (; index < size && carry; ++index) {
+		for (auto index = 0zu; index < out.size() && carry; ++index) {
 			auto res = safe_add_helper(out[index], carry);
 			out[index] = res.first;
 			carry = res.second;
@@ -33,18 +32,18 @@ namespace dark::internal::integer {
 	}
 
 	inline static constexpr auto safe_add_helper(
-		BlockInfo::type* out,
-		BlockInfo::type const* a,
-		std::size_t size,
-		std::size_t offset = 0
+		BlockInfo::blocks_t& out,
+		BlockInfo::blocks_t const& a
 	) noexcept -> BlockInfo::accumulator_t {
 		auto carry = BlockInfo::accumulator_t{};
+		auto const size = std::min(out.size(), a.size());
 		for (auto i = 0zu; i < size; ++i) {
-			auto [acc, c] = safe_add_helper(out[i + offset], a[i] + carry);
-			out[i + offset] = acc;
+			auto [acc, c] = safe_add_helper(out[i], a[i] + carry);
+			out[i] = acc;
 			carry = c;
 		}
-		return carry;
+		auto t = out.to_borrowed(size);
+		return safe_add_helper(t, carry);
 	}
 	
 	inline static constexpr auto safe_sub_helper(
@@ -64,13 +63,11 @@ namespace dark::internal::integer {
 	}
 	
 	inline static constexpr auto safe_sub_helper(
-		BlockInfo::type* out,
-		std::size_t index,
-		std::size_t size,
+		BlockInfo::blocks_t& out,
 		BlockInfo::accumulator_t val
 	) noexcept -> BlockInfo::accumulator_t {
 		auto borrow = val;
-		for (; index < size && borrow; ++index) {
+		for (auto index = 0zu; index < out.size() && borrow; ++index) {
 			auto res = safe_sub_helper(out[index], borrow);
 			out[index] = res.first;
 			borrow = res.second;
@@ -79,43 +76,39 @@ namespace dark::internal::integer {
 	}
 	
 	inline static constexpr auto safe_sub_helper(
-		BlockInfo::type* out,
-		BlockInfo::type const* a,
-		std::size_t size,
-		std::size_t offset = 0
+		BlockInfo::blocks_t& out,
+		BlockInfo::blocks_t const& a
 	) noexcept -> BlockInfo::accumulator_t {
 		auto borrow = BlockInfo::accumulator_t{};
+		auto const size = std::min(out.size(), a.size());
 		for (auto i = 0zu; i < size; ++i) {
-			auto [acc, c] = safe_sub_helper(out[i + offset], a[i], borrow);
-			out[i + offset] = acc;
+			auto [acc, c] = safe_sub_helper(out[i], a[i], borrow);
+			out[i] = acc;
 			borrow = c;
 		}
-		return borrow;
+
+		auto t = out.to_borrowed(size);
+		return safe_sub_helper(t, borrow);
 	}
 
 	inline static constexpr auto naive_mul(
-		BlockInfo::type* out,
-		std::size_t out_size,
-		BlockInfo::type const* lhs,
-		std::size_t lhs_size,
-		BlockInfo::type const* rhs,
-		std::size_t rhs_size
+		BlockInfo::blocks_t& out,
+		BlockInfo::blocks_t const& lhs,
+		BlockInfo::blocks_t const& rhs
 	) noexcept -> void {
-		assert(lhs_size != 0 && rhs_size != 0 && (out_size == lhs_size + rhs_size));
-		assert(out != nullptr);
+		using acc_t = BlockInfo::accumulator_t;
+		out.resize(lhs.size() + rhs.size());
 
-		if (lhs_size < rhs_size) {
-			std::swap(lhs_size, rhs_size);
-			std::swap(lhs, rhs);
-		}
-		
+		auto const lhs_size = lhs.size();
+		auto const rhs_size = rhs.size();
+
 		for (auto i = 0zu; i < lhs_size; ++i) {
-			BlockInfo::accumulator_t l = lhs[i];
+			auto l = acc_t{lhs[i]};
 
-			auto carry = BlockInfo::accumulator_t {};
+			auto carry = acc_t {};
 
 			for (auto j = 0zu; j < rhs_size; ++j) {
-				BlockInfo::accumulator_t r = rhs[j];
+				auto r = acc_t{rhs[j]};
 
 				auto [acc, c] = safe_add_helper(out[i + j], l * r + carry);
 
@@ -123,15 +116,16 @@ namespace dark::internal::integer {
 				carry = c;
 			}
 			
-			safe_add_helper(out, rhs_size + i, out_size, carry);
+			auto temp = out.to_borrowed(rhs_size + i);
+			safe_add_helper(temp, carry);
 		}
 	}
 
-	template <std::size_t MaxBuffLen, std::size_t NaiveThreshold = 32>
+	template <std::size_t NaiveThreshold = 32>
 	inline static constexpr auto karatsuba_mul_helper(
-		BlockInfo::type* out,
-		BlockInfo::type const* lhs,
-		BlockInfo::type const* rhs,
+		BlockInfo::blocks_t& out,
+		BlockInfo::blocks_t const& lhs,
+		BlockInfo::blocks_t const& rhs,
 		std::size_t size,
 		std::size_t depth = 0
 	) noexcept -> void {
@@ -139,11 +133,11 @@ namespace dark::internal::integer {
 		using acc_t = typename BlockInfo::accumulator_t;
 
 		if (size <= NaiveThreshold) {
-			naive_mul(out, size << 1, lhs, size, rhs, size);
+			auto old_size = out.size();
+			naive_mul(out, lhs, rhs);
+			out.resize(old_size, 0);
 			return;
 		}
-
-		constexpr auto next_buff_len = MaxBuffLen >= 32 ? (MaxBuffLen >> 1) : MaxBuffLen;
 
 		// lhs * rhs = z2 * (2^b)^2 + z1 * (2^b) + z0
 		// z0 = x_l * y_l
@@ -155,18 +149,22 @@ namespace dark::internal::integer {
 		auto const low = half;
 		auto const high = size - half;
 
-		auto xl = lhs;
-		auto xu = lhs + half;
-		auto yl = rhs;
-		auto yu = rhs + half;
+		auto xl = lhs.to_borrowed(0, half);
+		auto xu = lhs.to_borrowed(half);
+		auto yl = rhs.to_borrowed(0, half);
+		auto yu = rhs.to_borrowed(half);
 
-		constexpr auto buff_len = MaxBuffLen + 2;
+		assert(!xl.is_owned());
+		assert(!xu.is_owned());
+		assert(!yl.is_owned());
+		assert(!yu.is_owned());
 
-		block_t z0[buff_len << 1] = {0};
-		block_t z2[buff_len << 1] = {0};
-		block_t z3[buff_len << 1] = {0};
-		block_t x_sum[buff_len] = {0};
-		block_t y_sum[buff_len] = {0};
+		auto x_sum = DynArray<block_t>(high * 2 + /* carry */ 1, 0);
+		auto y_sum = DynArray<block_t>(high * 2 + /* carry */ 1, 0);
+		auto const sz = (high << 1) + 1;
+		auto z0 = DynArray<block_t>(sz, 0);
+		auto z2 = DynArray<block_t>(sz, 0);
+		auto z3 = DynArray<block_t>(sz, 0);
 
 		auto l_carry = acc_t{};
 		auto r_carry = acc_t{};
@@ -202,17 +200,24 @@ namespace dark::internal::integer {
 			y_sum[high] = r_carry & BlockInfo::lower_mask;
 		}
 
-		karatsuba_mul_helper<next_buff_len>(z0, xl, yl, low, depth + 1);
-		karatsuba_mul_helper<next_buff_len>(z2, xu, yu, high, depth + 1);
-		karatsuba_mul_helper<next_buff_len>(z3, x_sum, y_sum, mid_size, depth + 1);
+		/*std::println("{}: xl: {}\nxu: {}\nyl: {}\nyu: {}\nxs: {}\nys: {}\n", depth, xl, xu, yl, yu, x_sum, y_sum);*/
 
-		safe_add_helper(out + 0, z0, low * 2);
-		safe_add_helper(out + half, z3, mid_size * 2);
-		safe_add_helper(out + (half << 1), z2, high * 2);
+		karatsuba_mul_helper<NaiveThreshold>(z0, xl, yl, low, depth + 1);
+		karatsuba_mul_helper<NaiveThreshold>(z2, xu, yu, high, depth + 1);
+		karatsuba_mul_helper<NaiveThreshold>(z3, x_sum, y_sum, mid_size, depth + 1);
 
+		auto o1 = out.to_borrowed(0, low << 1);
+		auto o2 = out.to_borrowed(half, mid_size << 1);
+		auto o3 = out.to_borrowed(half << 1, high << 1);
+		safe_add_helper(o1, z0);
+		safe_add_helper(o2, z3);
+		safe_add_helper(o3, z2);
 
-		auto sz = (high << 1) + 1;
-		safe_add_helper(z0, z2, sz);
+		/*std::println("\n========{}==========", depth);*/
+		/*std::println("z0: {}\nz2: {}\nz3: {}\n", z0, z2, z3);*/
+		auto z0_t = z0.to_borrowed(0, sz);
+		auto z2_t = z2.to_borrowed(0, sz);
+		safe_add_helper(z0_t, z2_t);
 
 
 		auto b = acc_t{};
@@ -223,26 +228,35 @@ namespace dark::internal::integer {
 		}
 	}
 
-	template <std::size_t MaxLen, std::size_t NaiveThreshold = 32>
+	template <std::size_t NaiveThreshold = 32>
 	inline static constexpr auto karatsuba_mul(
-		BlockInfo::type* out,
-		[[maybe_unused]] std::size_t out_size,
-		BlockInfo::type const* lhs,
-		std::size_t lhs_size,
-		BlockInfo::type const* rhs,
-		std::size_t rhs_size
+		BlockInfo::blocks_t& out,
+		BlockInfo::blocks_t const& lhs,
+		BlockInfo::blocks_t const& rhs
 	) noexcept -> void {
-		assert(out_size <= 2 * MaxLen);
-		BlockInfo::type buff_a[MaxLen] = {0};
-		BlockInfo::type buff_b[MaxLen] = {0};
+		auto temp_size = std::max(lhs.size(), rhs.size());
+		out.resize(temp_size << 1, 0);
 
-		std::copy_n(lhs, std::min(MaxLen, lhs_size), buff_a);
-		std::copy_n(rhs, std::min(MaxLen, rhs_size), buff_b);
+		auto alloc = utils::get_current_alloc();
 
-		auto size =	std::max(lhs_size, rhs_size);
+		alloc->push_state();
+		
+		auto buff_a = DynArray<BlockInfo::type>(temp_size + 1, 0);
+		auto buff_b = DynArray<BlockInfo::type>(temp_size + 1, 0);
+
+		std::copy(lhs.begin(), lhs.end(), buff_a.begin());
+		std::copy(rhs.begin(), rhs.end(), buff_b.begin());
+
+		auto size =	std::max(lhs.size(), rhs.size());
 		size += (size & 1);
 
-		karatsuba_mul_helper<MaxLen, NaiveThreshold>(out, buff_a, buff_b, size);
+		karatsuba_mul_helper<NaiveThreshold>(
+			out,
+			buff_a,
+			buff_b,
+			size
+		);
+		alloc->pop_state();
 	}
 	
 
