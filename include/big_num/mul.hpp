@@ -1,6 +1,7 @@
 #ifndef DARK_BIG_NUM_MUL_HPP
 #define DARK_BIG_NUM_MUL_HPP
 
+#include "big_num/allocator.hpp"
 #include "dyn_array.hpp"
 #include "block_info.hpp"
 #include <algorithm>
@@ -237,9 +238,7 @@ namespace dark::internal::integer {
 		auto temp_size = std::max(lhs.size(), rhs.size());
 		out.resize(temp_size << 1, 0);
 
-		auto alloc = utils::get_current_alloc();
-
-		alloc->push_state();
+		utils::TempAllocatorScope scope;
 		
 		auto buff_a = DynArray<BlockInfo::type>(temp_size + 1, 0);
 		auto buff_b = DynArray<BlockInfo::type>(temp_size + 1, 0);
@@ -256,7 +255,6 @@ namespace dark::internal::integer {
 			buff_b,
 			size
 		);
-		alloc->pop_state();
 	}
 	
 

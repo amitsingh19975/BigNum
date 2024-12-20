@@ -35,13 +35,13 @@ namespace dark {
 
 		static constexpr size_type npos = std::numeric_limits<size_type>::max();
 
-		explicit constexpr DynArray(utils::Allocator* alloc = nullptr) noexcept
-			: m_alloc(alloc ? alloc : utils::get_current_alloc())
+		explicit constexpr DynArray(utils::BlockAllocator* alloc = nullptr) noexcept
+			: m_alloc(alloc ? alloc : utils::current_block_allocator())
 		{}
 
-		explicit constexpr DynArray(size_type size, std::optional<value_type> def = {}, utils::Allocator* alloc = nullptr)
+		explicit constexpr DynArray(size_type size, std::optional<value_type> def = {}, utils::BlockAllocator* alloc = nullptr)
 			: m_size(size)
-			, m_alloc(alloc ? alloc : utils::get_current_alloc())
+			, m_alloc(alloc ? alloc : utils::current_block_allocator())
 		{
 			reserve(size);
 			if (def)
@@ -53,7 +53,7 @@ namespace dark {
 			, m_size(size)
 			, m_capacity(size)
 			, m_owned(false)
-			, m_alloc(utils::get_current_alloc())
+			, m_alloc(utils::current_block_allocator())
 		{}
 
 		explicit constexpr DynArray(const_pointer data, size_type size) noexcept
@@ -112,8 +112,9 @@ namespace dark {
 		constexpr auto size() const noexcept -> size_type { return m_size; }
 		constexpr auto capacity() const noexcept -> size_type { return m_capacity; }
 		constexpr auto is_owned() const noexcept -> bool { return m_owned; }
-		constexpr auto allocator() const noexcept -> utils::Allocator* { 
+		constexpr auto allocator() const noexcept -> utils::BlockAllocator* { 
 			assert(m_alloc != nullptr);
+			assert(utils::AllocatorManager::instance().is_valid_allocator(m_alloc) && "Allocator: use after free.");
 			return m_alloc;
 		}
 		constexpr auto data() noexcept -> pointer { return m_data; }
@@ -213,8 +214,10 @@ namespace dark {
 	private:
 
 		auto reallocate(size_type size) noexcept -> pointer {
-			auto ptr = allocator()->realloc(m_data, size * sizeof(value_type), alignof(T));
-			return reinterpret_cast<pointer>(ptr);
+			if (m_data == nullptr) {
+				return allocator()->template allocate<value_type>(size);
+			}
+			return allocator()->reallocate(m_data, size);
 		}
 
 		auto ensure_space_for(size_type size) noexcept -> void {
@@ -241,7 +244,7 @@ namespace dark {
 		size_type	m_size{};
 		size_type	m_capacity{};
 		bool		m_owned{true};
-		mutable utils::Allocator* m_alloc{utils::get_current_alloc()};
+		mutable utils::BlockAllocator* m_alloc{};
 	};
 
 } // namespace dark

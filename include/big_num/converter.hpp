@@ -51,11 +51,8 @@ namespace dark::internal {
 		using integer_t = std::decay_t<decltype(out)>;
 		auto const from_base = static_cast<std::size_t>(from_radix);
 
-		char buff[1024 * 1024 * 2] = {0};
+		utils::TempAllocatorScope scope;
 
-		auto temp_buff = utils::BasicBumpAllocator(buff, sizeof(buff)/sizeof(buff[0]), "temp_buff");
-
-		utils::AllocatorScope scope(temp_buff);
 		auto tout = integer_t{};
 		dc_base_convert<integer_t, Naive>(tout, num, from_base);
 	

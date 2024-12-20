@@ -11,7 +11,6 @@ TEST_CASE("Dynamic Array", "[dyn_array]") {
 	SECTION("Construction") {
 		{
 			auto a = DynArray<int>();
-			REQUIRE(a.allocator() == utils::get_current_alloc());
 			REQUIRE(a.size() == 0);
 			REQUIRE(a.empty());
 			REQUIRE(a.capacity() == 0);
@@ -20,7 +19,6 @@ TEST_CASE("Dynamic Array", "[dyn_array]") {
 
 		{
 			auto a = DynArray<int>(5);
-			REQUIRE(a.allocator() == utils::get_current_alloc());
 			REQUIRE(a.size() == 5);
 			REQUIRE(!a.empty());
 			REQUIRE(a.capacity() == 8); // capacity cannot be drop by 8.
@@ -166,20 +164,18 @@ TEST_CASE("Dynamic Array", "[dyn_array]") {
 
 	SECTION("Allocator Scope") {
 		auto a = DynArray<int>();
-		REQUIRE(a.allocator()->name() == "global");
-		utils::BasicBumpAllocator temp(20, "temp");
-
+		REQUIRE(a.allocator()->current_block_size() == utils::AllocatorManager::global_bump_allocator_size);
+		REQUIRE(a.allocator()->name() == utils::AllocatorManager::global_allocator_name);
 		{
-			utils::AllocatorScope scope(temp);
+			utils::TempAllocatorScope scope(10);
 			auto b = DynArray<int>();
-			REQUIRE(b.allocator()->name() == "temp");
+			REQUIRE(a.allocator()->current_block_size() == 10);
+			REQUIRE(a.allocator()->name() == utils::AllocatorManager::temp_allocator_name);
 		}
 
 		auto c = DynArray<int>();
-		REQUIRE(c.allocator()->name() == "global");
-
-		auto d = DynArray<int>(&temp);
-		REQUIRE(d.allocator()->name() == "temp");
+		REQUIRE(a.allocator()->current_block_size() == utils::AllocatorManager::global_bump_allocator_size);
+		REQUIRE(a.allocator()->name() == utils::AllocatorManager::global_allocator_name);
 	}
 
 }

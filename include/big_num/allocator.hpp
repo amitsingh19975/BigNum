@@ -3,17 +3,20 @@
 
 #include <algorithm>
 #include <cassert>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <type_traits>
+#include <cstring>
+#include <memory>
 #include <utility>
-#include <list>
-#include <map>
-#include <unordered_map>
 #include <cstdlib>
 #include <string_view>
 #include <stack>
-#include <vector>
+#include <list>
+#include <atomic>
+#include <expected>
+
+#define DEBUG_ALLOCATOR
 
 #ifdef DEBUG_ALLOCATOR
 	#include <print>
@@ -28,325 +31,585 @@
 #endif
 
 namespace dark::utils {
+	enum class AllocatorError {
+		no_space // When there is not space to allocate
+	};
 
-	struct Allocator {
+	constexpr std::string_view to_string(AllocatorError e) noexcept {
+		switch (e) {
+			case AllocatorError::no_space: return "not enough space";
+		}
+		std::unreachable();
+	}
+
+	// NOTE: Assumption: allocation can never fail
+	struct BumpAllocator {
 		using mem_t = void*;
 		using size_type = std::size_t;
 		using index_t = std::uint32_t;
 
-		struct Info {
-			mem_t ptr;
-			size_type size;
-			bool is_freed;
+		static_assert(sizeof(size_type) == 8, "Right now, this allocator supports only 64-bit machine.");
+	private:
+		struct MemInfo {
+			index_t size;
+		};
+	public:
+		struct Ref {
+			index_t ref_count{};
+			index_t cursor{};
 		};
 
-		virtual ~Allocator() = default;
-		virtual auto allocate(size_type bytes, size_type align) noexcept -> mem_t = 0; 
-		virtual auto deallocate(mem_t block) noexcept -> void = 0; 
-		virtual auto reset() noexcept -> void = 0; 
-		virtual auto realloc(mem_t ptr, size_type new_size, size_type align) noexcept -> mem_t = 0;
-		virtual constexpr auto name() const noexcept -> std::string_view { return {}; }
-		virtual auto get_mem_info(mem_t) -> std::optional<Info> { return {}; }
+		static constexpr auto meta_info_size = sizeof(MemInfo);
 
-		virtual auto push_state() -> void {}
-		virtual auto pop_state() -> void {}
 
-		inline static Allocator* s_current = nullptr;
-	};
-
-	// NOTE: Assumption: malloc/new cannot fail.
-	struct BasicBumpAllocator: Allocator {
-	public:
-		using parent_t = Allocator;
-		using mem_t = parent_t::mem_t;
-		using size_type = parent_t::size_type;
-		using index_t = parent_t::index_t;
-
-		BasicBumpAllocator(std::size_t n, std::string_view name = {}, bool reuse_heap = false) noexcept
-			: m_size(n)
-			, m_reuse_heap(reuse_heap)
-			, m_name(name)
-			, m_owned(true)
+		constexpr BumpAllocator(size_type bytes) noexcept
+			: m_buff(new char[bytes])
+			, m_size(bytes)
 		{
-			constexpr auto align = alignof(std::max_align_t);
-			m_buff = static_cast<char*>(malloc(n * sizeof(char) + align));
-			
-			auto const ptr = reinterpret_cast<std::uintptr_t>(m_buff);
-			m_cursor += (ptr % align);
 		}
 
-		BasicBumpAllocator(char* buff, std::size_t n, std::string_view name = {}, bool reuse_heap = false) noexcept
+		constexpr BumpAllocator(char* buff, size_type size) noexcept
 			: m_buff(buff)
-			, m_size(n)
-			, m_reuse_heap(reuse_heap)
-			, m_name(name)
+			, m_size(size)
+			, m_owned(false)
+		{}
+
+		template <size_type N>
+		constexpr BumpAllocator(char (&buff)[N]) noexcept
+			: BumpAllocator(buff, N)
+		{}
+
+		BumpAllocator(BumpAllocator const&) = delete;
+		BumpAllocator& operator=(BumpAllocator const&) = delete;
+
+		constexpr BumpAllocator(BumpAllocator&& other) noexcept
+			: m_ref_cursor(other.m_ref_cursor.load(std::memory_order::relaxed))
+			, m_buff(other.m_buff)
+			, m_size(other.m_size)
+			, m_owned(other.m_owned)
 		{
-			constexpr auto align = alignof(std::max_align_t);
-			auto const ptr = reinterpret_cast<std::uintptr_t>(m_buff);
-			m_cursor += (ptr % align);
-		}
-		BasicBumpAllocator(BasicBumpAllocator const&) = delete;
-		BasicBumpAllocator& operator=(BasicBumpAllocator const&) = delete;
-		BasicBumpAllocator(BasicBumpAllocator&&) noexcept = default;
-		BasicBumpAllocator& operator=(BasicBumpAllocator&&) noexcept = default;
-
-		virtual ~BasicBumpAllocator() override {
-			reset();
-			if (m_owned) free(m_buff);
+			other.m_buff = nullptr;
+			other.m_owned = false;
+			other.m_size = 0;
+			other.m_ref_cursor.store(0);
 		}
 
-		virtual auto allocate(size_type bytes, size_type align) noexcept -> mem_t override {
-			if (bytes == 0) return nullptr;
-			auto new_cursor = find_aligned_space(align);
-			auto const padding = new_cursor - m_cursor;
+		constexpr BumpAllocator& operator=(BumpAllocator&& other) noexcept {
+			if (this == &other) return *this;
+			swap(other, *this);
+			return *this;
+		}
+
+		constexpr ~BumpAllocator() noexcept {
+			if (m_owned && m_buff) delete[] m_buff;
+		}
+
+
+		[[nodiscard]] auto allocate(size_type bytes) noexcept -> std::expected<mem_t, AllocatorError> {
+			auto const size = bytes + sizeof(MemInfo);
+			auto maybe_refs = try_alloc(size);	
+			if (!maybe_refs.has_value()) return std::unexpected(maybe_refs.error());
+
+			auto temp = *maybe_refs;
+
+			while (!m_ref_cursor.compare_exchange_weak(temp.first, temp.second, std::memory_order::acq_rel, std::memory_order::acquire)) {
+				maybe_refs = try_alloc(size);
+				if (!maybe_refs.has_value()) return std::unexpected(maybe_refs.error());
+
+				temp = *maybe_refs;
+			}
 			
-			auto const size = bytes;
-			auto const total_space_required = size + padding;
-
-			if (total_space_required > free_space()) {
-				auto n_size = size + align;
-				if (auto [ptr, sz] = get_memory(n_size); ptr) {
-					auto aligned_mem = align_ptr(ptr, align);
-					m_in_use_blocks[aligned_mem] = {sz, ptr};
-					debug_alloc("Reuse: Allocating ", aligned_mem, sz, false);
-					return aligned_mem;
-				}
-				auto* ptr = static_cast<char*>(malloc(n_size));
-				auto aligned_mem = align_ptr(ptr, align);
-				m_in_use_blocks[aligned_mem] = {n_size, aligned_mem};
-				debug_alloc("Heap: Allocating ", ptr, n_size, false);
-				return aligned_mem;
-			}
-			auto* ptr = m_buff + m_cursor;
-			auto* aligned_mem = ptr + padding;
-			m_cursor += total_space_required;	
-			m_in_use_blocks[ptr] = { total_space_required, ptr };
-			debug_alloc("Pool: Allocating ", aligned_mem, total_space_required, false);
-			return aligned_mem;
+			auto old_ref = from_ref_cursor(temp.first);
+			auto base_ptr = m_buff + old_ref.cursor;
+			auto mem_info = reinterpret_cast<MemInfo*>(base_ptr);
+			mem_info->size = static_cast<index_t>(bytes);
+			return static_cast<mem_t>(base_ptr + meta_info_size);
 		}
 
-		virtual auto deallocate(mem_t aligned_mem) noexcept -> void override {
-			if (aligned_mem == nullptr) return;
-			auto it = m_in_use_blocks.find(aligned_mem);
-			if (it == m_in_use_blocks.end()) return;
+		[[nodiscard]] constexpr auto reallocate(mem_t mem, size_type bytes) noexcept -> std::expected<mem_t, AllocatorError> {
+			auto old_size = get_ptr_size(mem);
+			if (old_size >= bytes) return mem;
+			auto maybe_refs = try_realloc(mem, bytes);
+			if (!maybe_refs) return std::unexpected(maybe_refs.error());
 
-			auto [sz, r_ptr] = it->second;
-			m_in_use_blocks.erase(aligned_mem);
-			debug_alloc("Deallocating ", aligned_mem, sz, true);
+			auto temp = *maybe_refs;
 
-			if (is_heap_ptr(r_ptr)) {
-				if (m_reuse_heap) {
-					auto& ls = m_free_blocks[sz];
-					ls.push_front(r_ptr);
-				} else {
-					free(r_ptr);
-				}
-				return;
+			while (!m_ref_cursor.compare_exchange_weak(std::get<0>(temp), std::get<1>(temp), std::memory_order::acq_rel, std::memory_order::acquire)) {
+				maybe_refs = try_realloc(mem, bytes);
+				if (!maybe_refs.has_value()) return std::unexpected(maybe_refs.error());
+
+				temp = *maybe_refs;
 			}
-			if (m_cursor == 0) return;
 
-			if (static_cast<char*>(r_ptr) + sz == m_buff + m_cursor) m_cursor -= sz;
-			else {
-				auto& ls = m_free_blocks[sz];
-				ls.push_front(r_ptr);
+			auto ptr = std::get<2>(temp);	
+			auto& mem_info = get_mem_info(ptr);
+			mem_info.size = static_cast<index_t>(bytes);
+
+			if (ptr != mem) {
+				std::memcpy(ptr, mem, old_size);
+			}
+			return ptr;
+		}
+
+		constexpr auto deallocate(mem_t mem) noexcept -> void {
+			if (mem == nullptr || !is_valid_ptr(mem)) return;	
+			auto temp = try_dealloc(mem);
+
+			while (!m_ref_cursor.compare_exchange_weak(temp.first, temp.second, std::memory_order::acq_rel, std::memory_order::acquire)) {
+				temp = try_dealloc(mem);
 			}
 		}
 
-		virtual auto reset() noexcept -> void override {
-			m_cursor = 0;
-			for (auto& [_, val]: m_in_use_blocks) {
-				auto [__, ptr] = val;
-				if (is_heap_ptr(ptr)) free(ptr);
-			}
-			m_in_use_blocks.clear();
-
-			for (auto& [_, ls]: m_free_blocks) {
-				for (auto ptr: ls) {
-					if (is_heap_ptr(ptr)) free(ptr);
-				}
-				ls.clear();
-			}
-			m_free_blocks.clear();
+		constexpr auto get_ref() const noexcept -> Ref {
+			auto temp = m_ref_cursor.load(std::memory_order::relaxed);
+			return from_ref_cursor(temp);
 		}
 
-		constexpr auto is_heap_ptr(mem_t ptr) const noexcept -> bool {
-			return ptr < m_buff || ptr >= (m_buff + size());
+		constexpr auto update_ref(Ref r) noexcept {
+			m_ref_cursor.store(to_ref_cursor(r));
 		}
 
-		virtual auto realloc(mem_t ptr, size_type new_size, size_type align) noexcept -> mem_t override {
-			auto [old_sz, real_ptr] = m_in_use_blocks[ptr];
-			if (old_sz >= new_size) return ptr;
-
-			if (!is_heap_ptr(real_ptr) && is_last_block(real_ptr, old_sz)) {
-				auto diff = new_size - old_sz;
-				if (m_cursor + diff <= size()) {
-					m_cursor += diff;
-					m_in_use_blocks[ptr] = { new_size, real_ptr };
-					return ptr;
-				}
-			}
-
-			auto mem = allocate(new_size, align);
-			std::memcpy(mem, ptr, old_sz);
-			deallocate(ptr);
-			return mem;
+		friend void swap(BumpAllocator& lhs, BumpAllocator& rhs) noexcept {
+			using std::swap;
+			auto t = lhs.m_ref_cursor.load(std::memory_order::relaxed);
+			lhs.m_ref_cursor.store(rhs.m_ref_cursor.load(std::memory_order::relaxed));
+			rhs.m_ref_cursor.store(t);
+			swap(lhs.m_buff, rhs.m_buff);
+			swap(lhs.m_size, rhs.m_size);
+			swap(lhs.m_owned, rhs.m_owned);
 		}
 
 		constexpr auto free_space() const noexcept -> size_type {
-			return std::max(m_cursor, size()) - m_cursor;
+			return m_size - get_ref().cursor;
 		}
 
-		virtual constexpr auto name() const noexcept -> std::string_view override { return m_name; }
+		[[nodiscard]] constexpr auto is_valid_ptr(mem_t mem) const noexcept -> bool {
+			auto ptr = static_cast<char*>(mem);
+			return ptr >= m_buff && ptr < m_buff + m_size; 
+		}
 
 		constexpr auto size() const noexcept -> size_type { return m_size; }
+		constexpr auto is_owned() const noexcept -> bool { return m_owned; }
 
-		auto start() const noexcept -> std::uintptr_t { return reinterpret_cast<uintptr_t>(m_buff); }
-		auto end() const noexcept -> std::uintptr_t { return reinterpret_cast<uintptr_t>(m_buff + size()); }
-		virtual auto get_mem_info(mem_t ptr) -> std::optional<Info> override { 
-			if (auto it = m_in_use_blocks.find(ptr); it != m_in_use_blocks.end()) {
-				return Info {
-					.ptr = it->second.second,
-					.size = it->second.first,
-					.is_freed = false
-				};
+		constexpr auto reset() noexcept -> void {
+			update_ref({ .ref_count = 0, .cursor = 0 });
+		}
+
+		constexpr auto get_ptr_size(mem_t mem) const noexcept -> size_type {
+			auto mem_info = get_mem_info(mem);
+			return mem_info.size;
+		}
+
+		constexpr auto buff_start_ptr() const noexcept -> char const* { return m_buff; }
+
+	private:
+		[[nodiscard]] constexpr auto from_ref_cursor(size_type ref_cursor) const noexcept -> Ref {
+			return {
+				.ref_count = static_cast<index_t>(ref_cursor >> 32),
+				.cursor = static_cast<index_t>(ref_cursor)
+			};
+		}
+
+		[[nodiscard]] constexpr auto to_ref_cursor(Ref r) const noexcept -> size_type {
+			return (static_cast<size_type>(r.ref_count) << 32) | r.cursor;
+		}
+
+		[[nodiscard]] constexpr auto try_alloc(size_type bytes) noexcept -> std::expected<std::pair<size_type /*old*/, size_type/*new*/>, AllocatorError> {
+			auto old_ref = get_ref();
+			if (old_ref.cursor + bytes > m_size) {
+				std::println(stderr, "Alloc: cursor => {}, bytes => {}, size => {} | {} | {}", old_ref.cursor, bytes, m_size, old_ref.cursor + bytes, free_space());
+				return std::unexpected(AllocatorError::no_space);
 			}
-			for (auto const& [sz, ls]: m_free_blocks) {
-				for (auto* m: ls) {
-					if (m == ptr) {
-						return Info {
-							.ptr = m,
-							.size = sz,
-							.is_freed = true
-						};
-					}
+			
+			auto new_ref = Ref{
+				.ref_count = old_ref.ref_count + 1,
+				.cursor = static_cast<index_t>(old_ref.cursor + bytes)
+			};
+			
+			return std::make_pair(to_ref_cursor(old_ref), to_ref_cursor(new_ref)) ;
+		}
+
+		[[nodiscard]] constexpr auto try_realloc(mem_t mem, size_type bytes) noexcept -> std::expected<std::tuple<size_type /*old*/, size_type/*new*/, mem_t>, AllocatorError> {
+			auto old_ref = get_ref();
+			{
+				auto ptr = static_cast<char*>(mem);
+				auto mem_info = get_mem_info(mem);
+
+				if (ptr + mem_info.size == m_buff + old_ref.cursor) {
+					auto diff = static_cast<index_t>(bytes - mem_info.size);
+					if (old_ref.cursor + diff > m_size) return std::unexpected(AllocatorError::no_space);
+					auto new_ref = Ref { .ref_count = old_ref.ref_count, .cursor = old_ref.cursor + diff };
+					return std::make_tuple(to_ref_cursor(old_ref), to_ref_cursor(new_ref), mem);
 				}
 			}
 
-			if (!is_heap_ptr(ptr)) {
-				return Info {
-					.ptr = ptr,
-					.size = 0,
-					.is_freed = true
-				};
+			auto const size = bytes + meta_info_size;
+			if (old_ref.cursor + size > m_size) return std::unexpected(AllocatorError::no_space);
+			auto new_ref = old_ref;
+			new_ref.cursor += static_cast<index_t>(size);
+			auto base_ptr = m_buff + old_ref.cursor;
+			auto ptr = static_cast<mem_t>(base_ptr + meta_info_size);
+
+			return std::make_tuple(to_ref_cursor(old_ref), to_ref_cursor(new_ref), ptr);
+		}
+
+		[[nodiscard]] auto try_dealloc(mem_t mem) noexcept -> std::pair<size_type /*old*/, size_type/*new*/> {
+			auto old_ref = get_ref();
+			auto ptr = static_cast<char*>(mem);
+			auto mem_info = get_mem_info(mem);
+			auto const actual_size = static_cast<index_t>(mem_info.size + meta_info_size);
+
+			auto new_ref = Ref { .ref_count = old_ref.ref_count - 1, .cursor = old_ref.cursor - actual_size };
+
+			if (ptr + mem_info.size == m_buff + old_ref.cursor) {
+				if (new_ref.ref_count == 0) new_ref.cursor = 0;
+				return { to_ref_cursor(old_ref), to_ref_cursor(new_ref) };
 			}
+			
+			if (new_ref.ref_count == 0) new_ref.cursor = 0;
+			else new_ref.cursor = old_ref.cursor;
 
-			return {};
+			return { to_ref_cursor(old_ref), to_ref_cursor(new_ref) };
 		}
 
-		virtual auto push_state() -> void override {
-			m_cursor_stack.push(m_cursor);
+		auto get_mem_info(mem_t mem) const noexcept -> MemInfo& {
+			auto ptr = static_cast<char*>(mem);
+			return *reinterpret_cast<MemInfo*>(ptr - meta_info_size);
 		}
-		virtual auto pop_state() -> void override {
-			m_cursor = m_cursor_stack.top();
-			m_cursor_stack.pop();
-
-			for (auto& [sz, ls]: m_free_blocks) {
-				ls.remove_if([this](auto* ptr) {
-					if (is_heap_ptr(ptr)) return false;
-					auto diff = static_cast<std::size_t>(static_cast<char*>(ptr) - m_buff);
-					return (diff >= m_cursor);
-				});
-			}
-			std::erase_if(m_free_blocks, [](auto const& val) {
-				return val.second.empty();
-			});
-			std::erase_if(m_in_use_blocks, [this](auto const& val) {
-				auto ptr = val.first;
-				if (is_heap_ptr(ptr)) return false;
-				auto diff = static_cast<std::size_t>(static_cast<char*>(ptr) - m_buff);
-				return (diff >= m_cursor);
-			});
-		}
-
 	private:
-		// TODO: Could be improved by using binary_search, but need to test if it is really required
-		//		 or linear search is better.
-		auto get_memory(size_type size) noexcept -> std::pair<mem_t, size_type> {
-			for (auto& [sz, ls]: m_free_blocks) {
-				if (sz >= size && ls.size() > 0) {
-					auto ptr = ls.front();
-					ls.pop_front();
-					return std::make_pair(ptr, sz);
-				}
-			}
-			return {};
-		}
-
-		constexpr auto find_aligned_space(size_type alignment) const noexcept -> size_type {
-			if (alignment < 2 || free_space() == 0) return m_cursor;
-			assert((alignment & 1) == 0 && "alignment must be a power of 2");
-			if (alignment & 1) std::unreachable(); // hint the compiler that alignment is a power of two. 
-			auto ptr = reinterpret_cast<std::uintptr_t>(m_buff + m_cursor);
-			return m_cursor + (ptr % alignment);
-		}
-
-		constexpr auto is_last_block(mem_t ptr, size_type sz) const noexcept -> bool {
-			return static_cast<char*>(ptr) + sz == m_buff + m_cursor;
-		}
-
-		constexpr auto align_ptr(mem_t ptr, size_type alignment) const noexcept -> mem_t {
-			if (alignment < 2) return ptr;
-			assert((alignment & 1) == 0 && "alignment must be a power of 2");
-			if (alignment & 1) std::unreachable(); // hint the compiler that alignment is a power of two. 
-			auto address = reinterpret_cast<std::uintptr_t>(ptr);
-			return static_cast<char*>(ptr) + (address % alignment);
-		}
-
-	private:
-		char *m_buff;
-		size_type m_size;
-		size_type m_cursor{};
-		std::unordered_map<mem_t, std::pair<size_type, mem_t>> m_in_use_blocks{};
-		std::map<size_type, std::list<mem_t>> m_free_blocks{};
-		std::stack<size_type> m_cursor_stack;
-		bool m_reuse_heap{false};
-		std::string_view m_name{};
-		bool m_owned{false};
+		alignas(alignof(std::max_align_t)) std::atomic<std::size_t> m_ref_cursor{}; // |ref_count(32bit)|cursor(32bit)|
+		[[maybe_unused]] char padding[128 - sizeof(m_ref_cursor)]; // to avoid false sharing
+		char* m_buff{nullptr};
+		size_type m_size{};
+		bool m_owned{true};
 	};
 
-	static constexpr std::size_t global_bump_allocator_size = /*32Mib*/ 1024 * 1024 * 16;
-	static inline auto get_global_bump_allocator() noexcept -> BasicBumpAllocator* {
-		static auto alloc = BasicBumpAllocator(global_bump_allocator_size, "global", false);
-		return &alloc;
-	}
 
-	static inline auto temp_buffer(std::size_t n = 1024 * 1024 * 2) noexcept {
-		return BasicBumpAllocator(n, "temp_buffer", true);
-	}
+	// INFO: Assumption: 1. allocation can never fail.
+	//					 2. each thread gets its own copy of block allocator.
+	//					 3. no exception can be thrown from the allocator
+	struct BlockAllocator {
+		using mem_t = void*;
+		using size_type = std::size_t;
+		using index_t = std::uint32_t;
 
-	inline static auto set_current_alloc(Allocator* alloc) noexcept -> void {
-		// TODO: add mutex to protect from data-race
-		Allocator::s_current = alloc;
-	}
+		static constexpr size_type extra_space = 32;
 
-	inline static auto get_current_alloc() noexcept -> Allocator* {
-		if (Allocator::s_current != nullptr) return Allocator::s_current;
-		set_current_alloc(get_global_bump_allocator());
-		return Allocator::s_current;
-	}
+		BlockAllocator(size_type block_size, std::string_view name = {}, bool reuse = false) noexcept
+			: m_block_size(block_size + extra_space)
+			, m_reuse(reuse)
+			, m_name(name)
+		{}
+		BlockAllocator(char* buff, size_type block_size, std::string_view name = {}, bool reuse = false) noexcept
+			: m_block_size(block_size)
+			, m_reuse(reuse)
+			, m_name(name)
+		{
+			m_blocks.emplace_front(buff, block_size);
+		}
+		template <size_type N>
+		BlockAllocator(char (&buff)[N], std::string_view name = {}, bool reuse = false) noexcept
+			: BlockAllocator(buff, N, name, reuse)
+		{
+		}
 
-	struct AllocatorScope {
+		BlockAllocator(BlockAllocator const&) = delete;
+		BlockAllocator& operator=(BlockAllocator const&) = delete;
+		BlockAllocator(BlockAllocator&&) noexcept = default;
+		BlockAllocator& operator=(BlockAllocator&&) noexcept = default;
+		~BlockAllocator() noexcept = default;
+
 		template <typename T>
-			requires std::is_base_of_v<Allocator, std::decay_t<T>>
-		constexpr AllocatorScope(T& alloc) noexcept {
-			if (get_current_alloc() == &alloc) {
+		auto allocate(size_type size) noexcept -> T* {
+			auto actual_size = size * sizeof(T);
+			auto& block = ensure_space(actual_size);
+			auto ptr_or = block.allocate(actual_size);
+			assert(ptr_or.has_value() && "No space left"); // This should never happen since we ensure enough space.
+			return reinterpret_cast<T*>(*ptr_or);
+		}
+
+		template <typename T>
+		auto deallocate(T* mem) noexcept -> void {
+			auto* ptr = static_cast<mem_t>(mem);
+			for (auto it = m_blocks.begin(); it != m_blocks.end(); ++it) {
+				auto& block = *it;
+				if (block.is_valid_ptr(ptr)) {
+					block.deallocate(ptr);
+					return;
+				}
+			}
+		}
+
+		template <typename T>
+		auto reallocate(T* mem, size_type size) noexcept -> T* {
+			auto* ptr = static_cast<mem_t>(mem);
+			auto const actual_size = size * sizeof(T);
+			ensure_space(actual_size);
+
+			for (auto it = m_blocks.begin(); it != m_blocks.end(); ++it) {
+				auto& block = *it;
+				if (block.is_valid_ptr(ptr)) {
+					auto ptr_or = block.reallocate(ptr, actual_size);
+					auto new_ptr = mem;
+					if (!ptr_or) {
+						new_ptr = allocate<T>(size);
+						auto old_size = block.get_ptr_size(ptr);
+						std::memcpy(new_ptr, ptr, old_size);
+						block.deallocate(ptr);
+					} else {
+						new_ptr = reinterpret_cast<T*>(*ptr_or);
+					}
+					return new_ptr;
+				}
+			}
+			assert(false && "Ensure space did not work properly.");
+			std::unreachable();
+		}
+
+		auto push_state() noexcept {
+			if (empty()) {
+				m_state.push({ .ptr = nullptr, .ref = {}, .cap = m_block_size });
+			} else {
+				auto& temp = front();
+				m_state.push({ .ptr = temp.buff_start_ptr(), .ref = temp.get_ref(), .cap = m_block_size });
+			}
+		}
+
+		auto push_state(size_type cap) noexcept -> void {
+			cap += extra_space;
+			if (empty()) {
+				m_state.push({ .ptr = nullptr, .ref = {}, .cap = cap });
+				ensure_space(cap);
 				return;
 			}
-			m_alloc = get_current_alloc();
-			set_current_alloc(&alloc);
+			
+			auto& temp = front();
+			m_state.push({ .ptr = temp.buff_start_ptr(), .ref = temp.get_ref(), .cap = cap });
+			ensure_space(cap);
 		}
-		constexpr AllocatorScope(AllocatorScope const&) noexcept = delete;
-		constexpr AllocatorScope& operator=(AllocatorScope const&) noexcept = delete;
-		constexpr AllocatorScope(AllocatorScope &&) noexcept = delete;
-		constexpr AllocatorScope& operator=(AllocatorScope &&) noexcept = delete;
-		constexpr ~AllocatorScope() noexcept {
-			if (m_alloc == nullptr) return;
-			auto* alloc = get_current_alloc();
-			alloc->reset();
-			set_current_alloc(m_alloc);
+
+		auto push_state(char* buff, size_type size) noexcept -> void {
+			if (empty()) {
+				m_state.push({ .ptr = nullptr, .ref = {}, .cap = m_block_size });
+			} else {
+				auto& temp = front();
+				m_state.push({ .ptr = temp.buff_start_ptr(), .ref = temp.get_ref(), .cap = size });
+			}
+			m_blocks.emplace_front(buff, size);
+		}
+	
+		template <std::size_t N>
+		auto push_state(char (&buff)[N]) noexcept -> void {
+			return push_state(buff, N);
+		}
+
+		auto pop_state() noexcept -> void {
+			assert(!empty() && "Blocks must not be empty.");
+			assert(!m_state.empty() && "pop is called on empty state.");
+			if (empty() || m_state.empty()) return;
+			auto top = m_state.top();
+			m_state.pop();
+
+			while (!empty() && top.ptr != m_blocks.front().buff_start_ptr()) {
+				auto temp = std::move(m_blocks.front());
+				m_blocks.pop_front();
+				temp.reset();
+				if (!temp.is_owned()) continue;
+				m_free_blocks.push_front(std::move(temp));
+			}
+
+			if (top.ptr == nullptr || empty()) return;
+			auto& temp = m_blocks.front();
+			temp.update_ref(top.ref);
+		}
+
+		constexpr auto empty() const noexcept -> bool { return m_blocks.empty(); }
+		constexpr auto blocks() const noexcept -> size_type { return m_blocks.size(); }
+		constexpr auto free_blocks() const noexcept -> size_type { return m_free_blocks.size(); }
+		constexpr auto current_block_size() const noexcept -> size_type {
+			if (m_state.empty()) return m_block_size;
+			return m_state.top().cap;
+		}
+		constexpr auto front() const noexcept -> BumpAllocator const& {
+			assert(!empty());
+			return m_blocks.front();
+		}
+
+		constexpr auto front() noexcept -> BumpAllocator& {
+			assert(!empty());
+			return m_blocks.front();
+		}
+
+		constexpr auto reset() noexcept -> void {
+			if (!m_reuse) {
+				m_free_blocks.clear();
+				m_blocks.clear();
+				return;
+			}
+			while (m_blocks.size() > 1) {
+				auto& temp = m_blocks.front();
+				temp.reset();
+				m_free_blocks.push_back(std::move(temp));
+				m_blocks.pop_front();
+			}
+			front().reset();
+		}
+
+		constexpr auto name() const noexcept -> std::string_view { return m_name; }
+		constexpr auto set_name(std::string_view name) noexcept -> void { m_name = name; }
+
+	private:
+		auto ensure_space(size_type size) -> BumpAllocator& {
+			auto block_size = current_block_size();
+			auto sz = size + BumpAllocator::meta_info_size;
+		
+			if (current_block_size() < sz) {
+				// INFO: If exceeded the capacity, then there's a high probility that we're
+				// going to be hit with larger value next;
+				block_size = static_cast<std::size_t>(static_cast<float>(sz) * 1.6f);
+			}
+
+			auto insert_block = [this, block_size] {
+				auto it = std::find_if(m_free_blocks.begin(), m_free_blocks.end(), [block_size](auto const& alloc) {
+					return alloc.size() >= block_size;
+				});	
+				if (it == m_free_blocks.end()) {
+					m_blocks.emplace_front(block_size);
+				} else {
+					m_blocks.push_front(std::move(*it));
+					m_free_blocks.erase(it);
+				}
+			};
+
+			for (auto it = m_blocks.begin(); it != m_blocks.end(); ++it) {
+				auto& block = *it;
+				if (block.free_space() >= size + BumpAllocator::meta_info_size) {
+					return block;
+				}
+			}
+
+			insert_block();
+			return front();
+		}
+		struct CursorState {
+			char const*			ptr;
+			BumpAllocator::Ref	ref;
+			size_type			cap;
+		};
+	private:
+		std::list<BumpAllocator> m_blocks;
+		std::list<BumpAllocator> m_free_blocks;
+		std::stack<CursorState> m_state;
+		size_type m_block_size;
+		bool m_reuse{false};
+		std::string_view m_name;
+	};
+
+	struct AllocatorManager {
+
+		static constexpr std::size_t global_bump_allocator_size = /*32Mib*/ 1024 * 1024 * 16; // 16Mib
+		static constexpr std::size_t temp_buff_allocator_size = /*32Mib*/ 1024 * 1024 * 2; // 2Mib
+		static constexpr std::string_view global_allocator_name = "global";
+		static constexpr std::string_view temp_allocator_name = "temp";
+
+		AllocatorManager(std::size_t global_size = global_bump_allocator_size, std::string_view global_name = global_allocator_name) 
+			: m_global(std::make_unique<BlockAllocator>(global_size, global_name))
+			, m_current(m_global.get())
+		{}
+		AllocatorManager(AllocatorManager const&) = delete;
+		AllocatorManager& operator=(AllocatorManager const&) = delete;
+		AllocatorManager(AllocatorManager &&) noexcept = default;
+		AllocatorManager& operator=(AllocatorManager &&) noexcept = default;
+		~AllocatorManager() = default;
+
+		static auto instance() noexcept -> AllocatorManager& {
+			static auto manager = AllocatorManager();
+			return manager;
+		}
+
+		constexpr auto global_alloc() const noexcept -> BlockAllocator* { 
+			return m_global.get();
+		}
+
+		constexpr auto current_alloc() const noexcept -> BlockAllocator* {
+			if (m_current) return m_current;
+			return m_global.get();
+		}
+
+		constexpr auto temp_alloc() const noexcept -> BlockAllocator* {
+			return m_temp.get();
+		}
+
+		constexpr auto is_temp_alloc_set() const noexcept -> bool {
+			return m_current == m_temp.get();
+		}
+
+		template <typename... Args>
+			requires std::constructible_from<BlockAllocator, Args...>
+		auto set_temp_alloc(Args&&... args) -> BlockAllocator* {
+			if (m_temp) {
+				m_current = m_temp.get();
+			} else {
+				m_temp = std::make_unique<BlockAllocator>(std::forward<Args>(args)...);
+				if (m_temp->name().empty()) m_temp->set_name(temp_allocator_name);
+				m_current = m_temp.get();
+			}
+			return m_current;
+		}
+
+		auto remove_temp_alloc() -> void {
+			m_current = m_global.get();
+			if (!m_temp) return;
+			m_temp->reset();
+		}
+
+		constexpr auto is_valid_allocator(BlockAllocator const* ptr) const noexcept -> bool {
+			return ptr == m_temp.get() || ptr == m_global.get();
+		}
+
+	private:
+		std::unique_ptr<BlockAllocator> m_global;
+		std::unique_ptr<BlockAllocator> m_temp{nullptr};
+		BlockAllocator* m_current{};
+	};
+
+	static inline auto current_block_allocator() noexcept -> BlockAllocator* {
+		return AllocatorManager::instance().current_alloc();
+	}
+
+	struct TempAllocatorScope {
+		template <typename... Args>
+			requires std::constructible_from<BlockAllocator, Args...>
+		constexpr TempAllocatorScope(Args&&... args) noexcept
+			: TempAllocatorScope(AllocatorManager::instance(), std::forward<Args>(args)...)
+		{}
+	
+		template <typename... Args>
+			requires std::constructible_from<BlockAllocator, Args...>
+		constexpr TempAllocatorScope(AllocatorManager& manager, Args&&... args) noexcept
+			: m_manager(manager) 
+		{
+			if (m_manager.is_temp_alloc_set()) {
+				return;
+			}
+			m_alloc = m_manager.set_temp_alloc(std::forward<Args>(args)...);
+		}
+		constexpr TempAllocatorScope() noexcept
+			: TempAllocatorScope(AllocatorManager::temp_buff_allocator_size, AllocatorManager::temp_allocator_name, true)
+		{}
+
+		constexpr TempAllocatorScope(TempAllocatorScope const&) noexcept = delete;
+		constexpr TempAllocatorScope& operator=(TempAllocatorScope const&) noexcept = delete;
+		constexpr TempAllocatorScope(TempAllocatorScope &&) noexcept = delete;
+		constexpr TempAllocatorScope& operator=(TempAllocatorScope &&) noexcept = delete;
+		constexpr ~TempAllocatorScope() noexcept {
+			if (m_alloc) {
+				m_manager.remove_temp_alloc();
+			}
 		}
 	private:
-		Allocator* m_alloc{nullptr};
+		AllocatorManager& m_manager;
+		BlockAllocator* m_alloc{nullptr};
 	};
 } // namespace dark::uitls
 

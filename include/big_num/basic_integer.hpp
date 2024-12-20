@@ -145,7 +145,6 @@ namespace dark::internal {
 			if (!validate_result.has_value()) return std::unexpected(std::move(validate_result.error()));
 
 			auto res = BasicInteger();
-			assert(res.dyn_arr().allocator() == utils::get_global_bump_allocator());
 			base_convert(res, num, infered_radix);
 			res.set_is_neg(is_neg);
 			
@@ -874,6 +873,8 @@ namespace dark::internal {
 				return;
 			}
 
+			auto scope = utils::TempAllocatorScope();
+
 			res.m_bits = a.bits() + b.bits();
 
 			auto const a_size = a.size();
@@ -963,6 +964,7 @@ namespace dark::internal {
 			quot.m_bits = num.bits();
 			rem.m_bits = num.bits();
 
+			auto scope = utils::TempAllocatorScope();
 			
 			switch(kind) {
 				case DivKind::LongDiv: case DivKind::Auto:
