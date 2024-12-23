@@ -19,7 +19,7 @@ TEST_CASE_METHOD(LeftShiftMock, "Right Shift Operations", "[logical_operations:r
 		auto shift = test.get_arg<std::size_t>("shift");
 		auto res = num.shift_left(shift, /*should_extend=*/ true); // "num << shift" does the same but does not extend the number buffer
 
-		REQUIRE(res == test.output);
+		REQUIRE((res == test.output));
 		++i;
 	}
 }
@@ -37,7 +37,7 @@ TEST_CASE_METHOD(RightShiftMock, "Right Shift Operations", "[logical_operations:
 		auto shift = test.get_arg<std::size_t>("shift");
 		auto res = num.shift_right(shift);
 
-		REQUIRE(res == test.output);
+		REQUIRE((res == test.output));
 		++i;
 	}
 }
