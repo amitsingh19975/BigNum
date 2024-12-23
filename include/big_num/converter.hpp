@@ -10,7 +10,7 @@
 
 namespace dark::internal {
 
-	template <typename I, std::size_t Naive>
+	template <typename I>
 	inline static constexpr auto dc_base_convert(
 		is_basic_integer auto& out,
 		std::string_view num,
@@ -19,7 +19,7 @@ namespace dark::internal {
 	) -> void {
 		auto const size = num.size();
 
-		if (size <= Naive) {
+		if (size <= BIG_NUM_PARSE_NAIVE_THRESHOLD) {
 			out.dyn_arr().resize(size, 0);
 			utils::convert_to_block_radix(out.data(), num, from_base);
 			out.trim_zero();
@@ -34,8 +34,8 @@ namespace dark::internal {
 		auto ln = I{};
 		auto rn = I{};
 		
-		dc_base_convert<I, Naive>(ln, lhs, from_base, depth + 1);
-		dc_base_convert<I, Naive>(rn, rhs, from_base, depth + 1);
+		dc_base_convert<I>(ln, lhs, from_base, depth + 1);
+		dc_base_convert<I>(rn, rhs, from_base, depth + 1);
 
 		auto base = I(from_base);
 		base.pow_mut(rhs.size());
@@ -43,7 +43,7 @@ namespace dark::internal {
 		out = ln * base + rn;
 	}
 	
-	template <std::size_t Naive = 5, std::size_t DC = 100'000>
+	template <std::size_t DC = 100'000>
 	inline static constexpr auto base_convert(
 		is_basic_integer auto& out,
 		std::string_view num,
@@ -55,7 +55,7 @@ namespace dark::internal {
 		utils::TempAllocatorScope scope;
 
 		auto tout = integer_t{};
-		dc_base_convert<integer_t, Naive>(tout, num, from_base);
+		dc_base_convert<integer_t>(tout, num, from_base);
 	
 		out.dyn_arr().clone_from(tout.dyn_arr());
 		out.trim_zero();

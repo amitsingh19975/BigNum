@@ -15,6 +15,14 @@
 	#define BIG_NUM_TOOM_COOK_3_THRESHOLD 1024
 #endif
 
+#ifndef BIG_NUM_PARSE_NAIVE_THRESHOLD
+	#define BIG_NUM_PARSE_NAIVE_THRESHOLD 2'000
+#endif
+
+#ifndef BIG_NUM_PARSE_DIVIDE_CONQUER_THRESHOLD
+	#define BIG_NUM_PARSE_DIVIDE_CONQUER_THRESHOLD 100'000
+#endif
+
 namespace dark {
 	enum class Radix: std::uint8_t {
 		None = 0,
