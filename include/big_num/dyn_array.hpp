@@ -198,8 +198,8 @@ namespace dark {
 		}
 
 		constexpr auto to_borrowed(size_type start = 0, size_type size = npos) const noexcept -> DynArray {
-			auto const end = std::min(start + std::min(size, m_size), m_size);
-			auto sz = end - start;
+			auto new_size = std::max(m_size, start) - start;
+			auto sz = std::min(new_size, size);
 			return DynArray(m_data + start,  sz);
 		}
 
