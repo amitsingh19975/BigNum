@@ -10,11 +10,17 @@ template <dark::internal::is_basic_integer T>
 struct std::formatter<T> {
 	dark::Radix radix{dark::Radix::Dec};
 	std::optional<char> sep{};
+	bool debug = false;
 
 	constexpr auto parse(auto& ctx) {
 		auto it = ctx.begin();
-		while (it != ctx.end() && *it != '{') {
+		while (it != ctx.end() && *it != '}') {
 			auto c = *it;
+			if (c == '?') {
+				debug = true;
+				++it;
+				break;
+			}
 			if (c == '_' || c == ',') {
 				sep = c;
 				++it;
@@ -55,7 +61,12 @@ struct std::formatter<T> {
 	}
 
 	auto format(T const& s, auto& ctx) const {
-		return std::format_to(ctx.out(), "{}", s.to_str(radix, true, sep));
+		if (debug) {
+			auto sign = s.is_neg() ? "-" : "";
+			return std::format_to(ctx.out(), "{}{}", sign, s.dyn_arr());
+		} else {
+			return std::format_to(ctx.out(), "{}", s.to_str(radix, true, sep));
+		}
 	}
 };
 
