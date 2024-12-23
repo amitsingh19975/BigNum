@@ -2,6 +2,7 @@
 #define DARK_BIG_NUM_CONVERTER_HPP
 
 #include "basic.hpp"
+#include "operators.hpp"
 #include "allocator.hpp"
 #include "utils.hpp"
 #include "type_traits.hpp"

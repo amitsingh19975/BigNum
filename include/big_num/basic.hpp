@@ -3,6 +3,18 @@
 
 #include <string_view>
 
+#ifndef BIG_NUM_NAIVE_THRESHOLD
+	#define BIG_NUM_NAIVE_THRESHOLD 32
+#endif
+
+#ifndef BIG_NUM_KARATSUBA_THRESHOLD
+	#define BIG_NUM_KARATSUBA_THRESHOLD 512
+#endif
+
+#ifndef BIG_NUM_TOOM_COOK_3_THRESHOLD
+	#define BIG_NUM_TOOM_COOK_3_THRESHOLD 1024
+#endif
+
 namespace dark {
 	enum class Radix: std::uint8_t {
 		None = 0,
@@ -36,6 +48,7 @@ namespace dark {
 		Auto,
 		Naive,
 		Karatsuba,
+		ToomCook3,
 		NTT
 	};
 

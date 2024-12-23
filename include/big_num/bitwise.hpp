@@ -29,7 +29,7 @@ namespace dark::internal {
 		auto const remaining = shift % BlockInfo::total_bits;
 
 		if (remaining == 0) return;
-		auto last_bits = BlockInfo::accumulator_t{};	
+		auto last_bits = BlockInfo::accumulator_t{};
 		for (auto i = blocks_to_shift; i < size; ++i) {
 			auto block = BlockInfo::accumulator_t{out[i]};
 			block = (block << remaining) | last_bits;
