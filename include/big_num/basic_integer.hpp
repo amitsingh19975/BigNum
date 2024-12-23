@@ -16,14 +16,14 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
-#include "big_num/allocator.hpp"
+#include "allocator.hpp"
 #include "dyn_array.hpp"
 #include <optional>
 #include <expected>
-#include "big_num/bitwise.hpp"
-#include "big_num/converter.hpp"
-#include "big_num/division.hpp"
-#include "big_num/type_traits.hpp"
+#include "bitwise.hpp"
+#include "converter.hpp"
+#include "division.hpp"
+#include "type_traits.hpp"
 #include "block_info.hpp"
 #include "utils.hpp"
 #include "mul.hpp"
@@ -585,7 +585,7 @@ namespace dark::internal {
 				auto const diff_size = (diff_bits + BlockInfo::total_bits - 1) / BlockInfo::total_bits;
 				out.m_data.resize(out.size() + diff_size, 0);
 			}
-			logical_left_shift(out.data(), out.size(), shift);
+			logical_left_shift(out.dyn_arr(), shift);
 			out.trim_zero();
 		}
 
@@ -593,7 +593,7 @@ namespace dark::internal {
 			BasicInteger& out,
 			std::size_t shift
 		) noexcept -> void {
-			logical_right_shift(out.data(), out.size(), shift);
+			logical_right_shift(out.dyn_arr(), shift);
 			out.trim_zero();
 		}
 

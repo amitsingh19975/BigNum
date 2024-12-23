@@ -3,17 +3,18 @@
 
 #include "block_info.hpp"
 #include <algorithm>
+#include <cstddef>
 
 namespace dark::internal {
 
 	inline static constexpr auto logical_left_shift(
-		BlockInfo::type* out,
-		std::size_t size,
+		BlockInfo::blocks_t& out,
 		std::size_t shift
 	) noexcept -> void {
+		auto const size = out.size();
 		auto blocks_to_shift = shift / BlockInfo::total_bits;
 		if (blocks_to_shift >= size) {
-			std::fill_n(out, size, 0);
+			out.resize(0);
 			return;
 		}
 		
@@ -22,7 +23,7 @@ namespace dark::internal {
 			for (auto i = size; i > blocks_to_shift; --i) {
 				out[i - 1] = out[i - 1 - blocks_to_shift];
 			}
-			std::fill_n(out, blocks_to_shift, 0);
+			std::fill_n(out.data(), blocks_to_shift, 0);
 		}
 
 
@@ -39,13 +40,13 @@ namespace dark::internal {
 	}
 
 	inline static constexpr auto logical_right_shift(
-		BlockInfo::type* out,
-		std::size_t size,
+		BlockInfo::blocks_t& out,
 		std::size_t shift
 	) noexcept -> void {
+		auto const size = out.size();
 		auto blocks_to_shift = shift / BlockInfo::total_bits;
 		if (blocks_to_shift >= size) {
-			std::fill_n(out, size, 0);
+			out.resize(0);
 			return;
 		}
 		
@@ -54,7 +55,7 @@ namespace dark::internal {
 			for (auto i = blocks_to_shift; i < size; ++i) {
 				out[i - blocks_to_shift] = out[i];
 			}
-			std::fill_n(out + size - blocks_to_shift, blocks_to_shift, 0);
+			std::fill(out.rbegin() + static_cast<std::ptrdiff_t>(blocks_to_shift), out.rend(), 0);
 		}
 
 
