@@ -22,7 +22,7 @@ namespace dark::internal {
 		if (size <= BIG_NUM_PARSE_NAIVE_THRESHOLD) {
 			out.dyn_arr().resize(size, 0);
 			utils::convert_to_block_radix(out.data(), num, from_base);
-			out.trim_zero();
+			out.trim_leading_zeros();
 			return;
 		}
 
@@ -58,7 +58,7 @@ namespace dark::internal {
 		dc_base_convert<integer_t>(tout, num, from_base);
 	
 		out.dyn_arr().clone_from(tout.dyn_arr());
-		out.trim_zero();
+		out.trim_leading_zeros();
 	}
 
 } // dark::internal

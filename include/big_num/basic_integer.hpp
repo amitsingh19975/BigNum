@@ -20,6 +20,7 @@
 #include "dyn_array.hpp"
 #include <optional>
 #include <expected>
+#include <vector>
 #include "bitwise.hpp"
 #include "converter.hpp"
 #include "division.hpp"
@@ -175,7 +176,7 @@ namespace dark::internal {
 			if (new_num < BlockInfo::max_value) {
 				if (new_num == 0) return res;
 				res.m_data.push_back(new_num);
-				res.trim_zero();
+				res.trim_leading_zeros();
 				res.set_is_neg(is_neg);
 				return res;
 			}
@@ -207,7 +208,7 @@ namespace dark::internal {
 			}
 
 			res.set_is_neg(is_neg);
-			res.trim_zero();
+			res.trim_leading_zeros();
 			return res;
 		}
 
@@ -477,7 +478,7 @@ namespace dark::internal {
 			if (flag) block |= (bit << pos);
 			else block &= ~(bit << pos);
 
-			trim_zero();
+			trim_leading_zeros();
 		}
 
 		constexpr auto get_bit(std::size_t pos) const noexcept -> bool {
@@ -497,8 +498,38 @@ namespace dark::internal {
 			return !(b & (b - 1));
 		}
 
-		constexpr auto trim_zero() noexcept -> void {
-			while (!m_data.empty() && m_data.back() == 0) m_data.pop_back();
+		constexpr auto trim_leading_zeros() noexcept -> void {
+			auto i = 0zu;
+			for (; i < size(); ++i) {
+				auto idx = size() - i - 1;
+				if (m_data[idx]) break;
+			}
+
+			resize(size() - i);
+
+			if (m_data.empty()) {
+				set_is_neg(false);
+				m_bits = 0;
+				m_flags = 0;
+				return;
+			}
+			auto bits = static_cast<std::size_t>(std::bit_width(m_data.back()));
+			m_bits = (size() - 1) * BlockInfo::total_bits + bits;
+		}
+
+		constexpr auto trim_trailing_zeros() noexcept -> void {
+			auto i = 0zu;
+			for (; i < size(); ++i) {
+				if (m_data[i]) break;
+			}
+
+			if (i == size()) {
+				m_data.clear();
+			} else {
+				std::move(begin() + i, end() - i, begin());
+				resize(size() - i);
+			}
+
 			if (m_data.empty()) {
 				set_is_neg(false);
 				m_bits = 0;
@@ -535,12 +566,13 @@ namespace dark::internal {
 			return temp;
 		}
 
-		static auto make_with_size(size_type size, block_t def = {}) -> BasicInteger {
-			auto temp = BasicInteger{};
-			temp.resize(size, def);
-			return temp;
-		}
 
+		// ranage: [start, end)
+		// This is an exculsive range or end is not included in the range.
+		constexpr auto to_borrowed_from_range(size_type start, size_type end) const noexcept -> BasicInteger {
+			return to_borrowed(start, end - start);
+		}
+		
 		constexpr auto transfer_ownership(BasicInteger& other) -> void {
 			if (other.dyn_arr().allocator() != dyn_arr().allocator()) {
 				dyn_arr().clone_from(other.dyn_arr());
@@ -574,6 +606,13 @@ namespace dark::internal {
 			}
 			return 0;
 		}
+
+		constexpr auto operator[](size_type k) const noexcept -> const_reference {
+			return m_data[k];
+		}
+		constexpr auto operator[](size_type k) noexcept -> reference {
+			return m_data[k];
+		}	
 	private:
 		static constexpr auto shift_left_helper(
 			BasicInteger& out,
@@ -586,7 +625,7 @@ namespace dark::internal {
 				out.m_data.resize(out.size() + diff_size, 0);
 			}
 			logical_left_shift(out.dyn_arr(), shift);
-			out.trim_zero();
+			out.trim_leading_zeros();
 		}
 
 		static constexpr auto shift_right_helper(
@@ -594,7 +633,7 @@ namespace dark::internal {
 			std::size_t shift
 		) noexcept -> void {
 			logical_right_shift(out.dyn_arr(), shift);
-			out.trim_zero();
+			out.trim_leading_zeros();
 		}
 
 		static constexpr auto bitwise_op_helper(
@@ -607,7 +646,7 @@ namespace dark::internal {
 			for (auto i = 0zu; i < size; ++i) {
 				out.m_data[i] = fn(out.m_data[i], mask.m_data[i]);
 			}
-			out.trim_zero();
+			out.trim_leading_zeros();
 		}
 		
 		constexpr auto abs_less(BasicInteger const& other) const noexcept -> bool {
@@ -628,7 +667,7 @@ namespace dark::internal {
 				pow >>= 1;
 			}
 			self = std::move(res);
-			self.trim_zero();
+			self.trim_leading_zeros();
 			self.reset_ou_flags();
 		}
 
@@ -655,7 +694,7 @@ namespace dark::internal {
 				res.m_data.push_back(static_cast<block_t>(carry));
 			}
 			
-			res.trim_zero();
+			res.trim_leading_zeros();
 		}
 
 		static constexpr auto sub_impl(
@@ -692,7 +731,7 @@ namespace dark::internal {
 			std::copy(lhs->begin(), lhs->end(), res.begin());
 			auto borrow = integer::safe_sub_helper(res.m_data, *rhs);
 
-			res.trim_zero();
+			res.trim_leading_zeros();
 			
 			res.set_is_neg(is_neg);
 			if (borrow || is_neg) {
@@ -743,25 +782,27 @@ namespace dark::internal {
 					rem.m_data[blocks] = num.m_data[blocks] & mask; 
 				}
 			} else {
-				quot.resize(num.size(), 0);
-				rem.resize(num.size(), 0);
+				auto const msz = std::max(3zu, num.size());
+				quot.resize(msz, 0);
+				rem.resize(msz, 0);
 				quot.m_bits = num.bits();
 				rem.m_bits = num.bits();
 
 				auto scope = utils::TempAllocatorScope();
-				
-				switch(kind) {
-					case DivKind::LongDiv: case DivKind::Auto:
-						integer::long_div(num, den, quot, rem);
-						break;
-					default: break;
+				if (!integer::fast_div(num, den, quot, rem)) {
+					switch(kind) {
+						case DivKind::LongDiv: case DivKind::Auto:
+							integer::long_div(num, den, quot, rem);
+							break;
+						default: break;
+					}
 				}
 			}
 
 			quot.set_is_neg(q_neg);
 			rem.set_is_neg(r_neg);
-			quot.trim_zero();
-			rem.trim_zero();
+			quot.trim_leading_zeros();
+			rem.trim_leading_zeros();
 		}
 
 

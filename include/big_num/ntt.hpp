@@ -1,7 +1,7 @@
 #ifndef AMT_DARK_BIG_NUM_NTT_HPP
 #define AMT_DARK_BIG_NUM_NTT_HPP
 
-#include "big_num/block_info.hpp"
+#include "block_info.hpp"
 #include <cassert>
 #include <vector>
 #include <bit>
@@ -38,18 +38,7 @@ namespace dark::internal::impl {
 		static constexpr auto half_mask = (type{1} << half_bits) - 1;
 
 		static constexpr auto n = BlockInfo::mod;
-		static constexpr auto nr = []{
-			acc_t nr = 1;
-
-			// INFO: Use Newton-Raphson iteration to find `nr` (modular multiplicative inverse)
-			// total iterations required log2(number_of_bits) = log2(64) = 6	
-			for (auto i = 0u; i < 6; ++i) {
-				nr *= 2 - n * nr; 
-				nr &= BlockInfo::ntt_lower_mask; 
-			}
-			return nr;
-		}();
-
+		static constexpr auto nr = internal::BinaryModularInv<BlockInfo::ntt_lower_mask>{}(n);
 		[[nodiscard]] constexpr auto reduce(acc_t x) const noexcept -> type {
 			type q = (nr * x) & BlockInfo::ntt_lower_mask;
 			type m = ((q * acc_t{n}) >> BlockInfo::ntt_total_bits) & BlockInfo::ntt_lower_mask;
