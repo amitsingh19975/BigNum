@@ -73,7 +73,7 @@ namespace dark::utils {
 		std::string_view num,
 		std::size_t from_radix
 	) noexcept -> std::size_t {
-		return basic_convert_to_block_radix<internal::BlockInfo::max_value>(
+		return basic_convert_to_block_radix<internal::BlockInfo::block_max_value>(
 			out,
 			from_radix,
 			num.size(),

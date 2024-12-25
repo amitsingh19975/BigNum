@@ -169,7 +169,7 @@ constexpr decltype(auto) operator<<(L const& lhs, R rhs) noexcept {
 
 template <typename L, typename R>
 	requires (dark::internal::is_basic_integer<L> && std::integral<R>)
-constexpr decltype(auto) operator<<=(L const& lhs, R rhs) noexcept {
+constexpr decltype(auto) operator<<=(L& lhs, R rhs) noexcept {
 	assert(rhs >= 0);
 	auto shift = static_cast<std::size_t>(rhs);
 	return lhs.shift_left_mut(shift, true);
@@ -185,7 +185,7 @@ constexpr decltype(auto) operator>>(L const& lhs, R rhs) noexcept {
 
 template <typename L, typename R>
 	requires (dark::internal::is_basic_integer<L> && std::integral<R>)
-constexpr decltype(auto) operator>>=(L const& lhs, R rhs) noexcept {
+constexpr decltype(auto) operator>>=(L& lhs, R rhs) noexcept {
 	assert(rhs >= 0);
 	auto shift = static_cast<std::size_t>(rhs);
 	return lhs.shift_right_mut(shift);

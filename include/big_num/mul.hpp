@@ -8,7 +8,6 @@
 #include "dyn_array.hpp"
 #include "block_info.hpp"
 #include <algorithm>
-#include <bit>
 #include <cassert>
 #include <type_traits>
 #include "operators.hpp"
@@ -131,8 +130,8 @@ namespace dark::internal::integer {
 		
 		auto const mid_size = high + static_cast<bool>(l_carry | r_carry);
 		if (mid_size > high) {
-			x_sum[high] = l_carry & BlockInfo::lower_mask;
-			y_sum[high] = r_carry & BlockInfo::lower_mask;
+			x_sum[high] = l_carry & BlockInfo::block_lower_mask;
+			y_sum[high] = r_carry & BlockInfo::block_lower_mask;
 		}
 
 		/*std::println("{}: xl: {}\nxu: {}\nyl: {}\nyu: {}\nxs: {}\nys: {}\n", depth, xl, xu, yl, yu, x_sum, y_sum);*/
@@ -144,15 +143,15 @@ namespace dark::internal::integer {
 		auto o1 = out.to_borrowed(0, low << 1);
 		auto o2 = out.to_borrowed(half, mid_size << 1);
 		auto o3 = out.to_borrowed(half << 1, high << 1);
-		safe_add_helper(o1, z0);
-		safe_add_helper(o2, z3);
-		safe_add_helper(o3, z2);
+		safe_add_helper(o1, o1, z0);
+		safe_add_helper(o2, o2, z3);
+		safe_add_helper(o3, o3, z2);
 
 		/*std::println("\n========{}==========", depth);*/
 		/*std::println("z0: {}\nz2: {}\nz3: {}\n", z0, z2, z3);*/
 		auto z0_t = z0.to_borrowed(0, sz);
 		auto z2_t = z2.to_borrowed(0, sz);
-		safe_add_helper(z0_t, z2_t);
+		safe_add_helper(z0_t, z0_t, z2_t);
 
 
 		auto b = acc_t{};
@@ -200,15 +199,15 @@ namespace dark::internal::integer {
 	) noexcept -> std::tuple<BlockInfo::type, BlockInfo::type, BlockInfo::type>
 	{
 		auto b0 = rhs < prev;
-		auto t0 = lhs + b0 * BlockInfo::max_value - prev;
+		auto t0 = lhs + b0 * BlockInfo::block_max_value - prev;
 		
 		auto b1 = lhs < t0;
-		auto t1 = lhs + b1 * BlockInfo::max_value - t0;
+		auto t1 = lhs + b1 * BlockInfo::block_max_value - t0;
 		
 		auto b = static_cast<BlockInfo::type>(b0 | b1);
 		assert(t1 % D == 0);
 		auto res = t1 / D;
-		auto c = (res >> BlockInfo::total_bits) & BlockInfo::lower_mask;
+		auto c = (res >> BlockInfo::block_total_bits) & BlockInfo::block_lower_mask;
 		if (b && c) {
 			c -= 1;
 			b -= 1;
@@ -222,21 +221,8 @@ namespace dark::internal::integer {
 		BlockInfo::blocks_t const& lhs,
 		BlockInfo::blocks_t const& rhs
 	) noexcept -> bool {
-	
-		constexpr auto count_bits = [](BlockInfo::blocks_t const& arr) {
-			auto bits = 0zu;
-			for (auto i = 0zu; i < arr.size(); ++i) {
-				auto b = arr[i];
-				if (!b) continue;
-				bits = static_cast<std::size_t>(std::bit_width(b));
-				return bits + BlockInfo::total_bits * (arr.size() - i);
-			}
-
-			return bits;
-		};
-
-		auto lb = count_bits(lhs);
-		auto rb = count_bits(rhs);
+		auto lb = compute_used_bits(lhs);
+		auto rb = compute_used_bits(rhs);
 
 		if (lb > rb) return false;
 		if (lb < rb) return true;
@@ -373,7 +359,7 @@ namespace dark::internal::integer {
 		
 		// 6. o3 = (o2 - o3)/2 + 2 * o_inf;
 		auto t = o3;
-		o3 = ((o2 - o3) >> 1) + (o_inf * 2);
+		o3 = ((o2 - o3) >> 1) + (o_inf << 1);
 
 		// 7. o2 = o2 + o1 - o4
 		o2 += o1 - o4;

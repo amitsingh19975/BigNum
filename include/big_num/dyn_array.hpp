@@ -66,14 +66,15 @@ namespace dark {
 			std::copy(li.begin(), li.end(), begin());
 		}
 
+        // INFO: Keeps forwards the owned flag.
 		constexpr DynArray(DynArray const& other)
 			: m_size(other.size())
 			, m_capacity(other.size())
 			, m_alloc(other.allocator())
 		{
 			if (other.m_data == nullptr) return;
-			m_data = reallocate(other.size());
-			std::copy(other.begin(), other.end(), begin());
+            m_data = reallocate(other.size());
+            std::copy(other.begin(), other.end(), begin());
 		}
 
 		constexpr DynArray& operator=(DynArray const& other) {
@@ -95,6 +96,7 @@ namespace dark {
 			other.m_size = 0;
 			other.m_owned = true;
 		}
+
 		constexpr DynArray& operator=(DynArray&& other) noexcept {
 			if (this == &other) return *this;
 			auto temp = DynArray(std::move(other));

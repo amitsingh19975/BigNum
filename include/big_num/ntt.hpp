@@ -34,15 +34,15 @@ namespace dark::internal::impl {
 		using size_type = std::size_t;
 		using type = typename BlockInfo::type;
 		using acc_t = typename BlockInfo::accumulator_t;
-		static constexpr auto half_bits = (BlockInfo::total_bits >> 1);
+		static constexpr auto half_bits = (BlockInfo::block_total_bits >> 1);
 		static constexpr auto half_mask = (type{1} << half_bits) - 1;
 
 		static constexpr auto n = BlockInfo::mod;
-		static constexpr auto nr = internal::BinaryModularInv<BlockInfo::ntt_lower_mask>{}(n);
+		static constexpr auto nr = internal::BinaryModularInv<BlockInfo::lower_mask>{}(n);
 		[[nodiscard]] constexpr auto reduce(acc_t x) const noexcept -> type {
-			type q = (nr * x) & BlockInfo::ntt_lower_mask;
-			type m = ((q * acc_t{n}) >> BlockInfo::ntt_total_bits) & BlockInfo::ntt_lower_mask;
-			type res = ((x >> BlockInfo::ntt_total_bits) + n - m) & BlockInfo::ntt_lower_mask;
+			type q = (nr * x) & BlockInfo::lower_mask;
+			type m = ((q * acc_t{n}) >> BlockInfo::total_bits) & BlockInfo::lower_mask;
+			type res = ((x >> BlockInfo::total_bits) + n - m) & BlockInfo::lower_mask;
 			res -= n * (acc_t{res} >= n);
 			return res;
 		}
@@ -53,7 +53,7 @@ namespace dark::internal::impl {
 		}
 
 		[[nodiscard]] constexpr auto transform(acc_t x) const noexcept -> type {
-			return ((x << BlockInfo::ntt_total_bits) % n) & BlockInfo::ntt_lower_mask;
+			return ((x << BlockInfo::total_bits) % n) & BlockInfo::lower_mask;
 		}
 	};
 
@@ -162,10 +162,10 @@ namespace dark::internal::impl {
 					acc_t const t = mon.multply(el, w);
 
 					auto& ej = data[j];
-					el = (ej + BlockInfo::mod * (ej < t) - t) & BlockInfo::ntt_lower_mask;
+					el = (ej + BlockInfo::mod * (ej < t) - t) & BlockInfo::lower_mask;
 
 					auto const temp_sum = ej + t;
-					ej = (temp_sum - BlockInfo::mod * (temp_sum > BlockInfo::mod)) & BlockInfo::ntt_lower_mask;
+					ej = (temp_sum - BlockInfo::mod * (temp_sum > BlockInfo::mod)) & BlockInfo::lower_mask;
 				}
 			}
 
@@ -194,7 +194,7 @@ namespace dark::internal::impl {
 		}
 
 		static constexpr auto cal_block_size(std::size_t n, std::size_t allocated_n) noexcept -> std::size_t {
-			auto size = (n * BlockInfo::total_bits + Montgomery::half_bits  - 1) / Montgomery::half_bits;
+			auto size = (n * BlockInfo::block_total_bits + Montgomery::half_bits  - 1) / Montgomery::half_bits;
 			if (size <= allocated_n) return allocated_n;
 			return neareast_power_of_2(size);
 		}
@@ -227,7 +227,7 @@ namespace dark::internal::impl {
 				auto temp = (high << Montgomery::half_bits) | low;
 				out[j++] = temp;
 			}
-			out[j] = carry & BlockInfo::lower_mask;
+			out[j] = carry & BlockInfo::block_lower_mask;
 		}
 
 	private:

@@ -20,7 +20,6 @@
 #include "dyn_array.hpp"
 #include <optional>
 #include <expected>
-#include <vector>
 #include "bitwise.hpp"
 #include "converter.hpp"
 #include "division.hpp"
@@ -50,6 +49,8 @@ namespace dark::internal {
 		using const_pointer = typename base_type::const_pointer;
 		using size_type = typename base_type::size_type;
 		using difference_type = typename base_type::difference_type;
+
+        static constexpr auto npos = base_type::npos;
 
 		constexpr BasicInteger() noexcept = default;
 		constexpr BasicInteger(BasicInteger const&) = default;
@@ -173,9 +174,9 @@ namespace dark::internal {
 			
 			new_num = static_cast<unsigned_type>(num);
 
-			if (new_num < BlockInfo::max_value) {
+			if (new_num < BlockInfo::block_max_value) {
 				if (new_num == 0) return res;
-				res.m_data.push_back(new_num);
+				res.m_data.push_back(new_num & BlockInfo::block_lower_mask);
 				res.trim_leading_zeros();
 				res.set_is_neg(is_neg);
 				return res;
@@ -340,7 +341,7 @@ namespace dark::internal {
 					s.resize(bits() + 2);
 					utils::basic_convert_to_block_radix<2>(
 						s.data(),
-						BlockInfo::max_value,
+						BlockInfo::block_max_value,
 						size(),
 						get_digit
 					);
@@ -349,7 +350,7 @@ namespace dark::internal {
 					s.resize(bits() + 2);
 					utils::basic_convert_to_block_radix<8>(
 						s.data(),
-						BlockInfo::max_value,
+						BlockInfo::block_max_value,
 						size(),
 						get_digit
 					);
@@ -358,7 +359,7 @@ namespace dark::internal {
 					s.resize(bits() / 4 + 2, 0);
 					utils::basic_convert_to_block_radix<16>(
 						s.data(),
-						BlockInfo::max_value,
+						BlockInfo::block_max_value,
 						size(),
 						get_digit
 					);
@@ -367,7 +368,7 @@ namespace dark::internal {
 					s.resize(bits() / 2 + 2, 0);
 					utils::basic_convert_to_block_radix<10>(
 						s.data(),
-						BlockInfo::max_value,
+						BlockInfo::block_max_value,
 						size(),
 						get_digit
 					);
@@ -466,12 +467,12 @@ namespace dark::internal {
 		}
 
 		constexpr auto set_bit(std::size_t pos, bool flag, bool should_expand = false) -> void {
-			auto index = pos / BlockInfo::total_bits;
+			auto index = pos / BlockInfo::block_total_bits;
 			if (index >= size()) {
 				if (!should_expand) return;
 				resize(index + 1, 0);
 			}
-			pos = pos % BlockInfo::total_bits;
+			pos = pos % BlockInfo::block_total_bits;
 			
 			auto& block = m_data[index];
 			auto bit = block_t{flag};
@@ -482,9 +483,9 @@ namespace dark::internal {
 		}
 
 		constexpr auto get_bit(std::size_t pos) const noexcept -> bool {
-			auto index = pos / BlockInfo::total_bits;
+			auto index = pos / BlockInfo::block_total_bits;
 			if (index >= size()) return false;
-			pos = pos % BlockInfo::total_bits;
+			pos = pos % BlockInfo::block_total_bits;
 			auto block = m_data[index];
 			return (block >> pos) & 1; 
 		}
@@ -514,7 +515,7 @@ namespace dark::internal {
 				return;
 			}
 			auto bits = static_cast<std::size_t>(std::bit_width(m_data.back()));
-			m_bits = (size() - 1) * BlockInfo::total_bits + bits;
+			m_bits = (size() - 1) * BlockInfo::block_total_bits + bits;
 		}
 
 		constexpr auto trim_trailing_zeros() noexcept -> void {
@@ -525,7 +526,7 @@ namespace dark::internal {
 
 			if (i == size()) {
 				m_data.clear();
-			} else {
+			} else if (i != 0) {
 				std::move(begin() + i, end() - i, begin());
 				resize(size() - i);
 			}
@@ -537,7 +538,7 @@ namespace dark::internal {
 				return;
 			}
 			auto bits = static_cast<std::size_t>(std::bit_width(m_data.back()));
-			m_bits = (size() - 1) * BlockInfo::total_bits + bits;
+			m_bits = (size() - 1) * BlockInfo::block_total_bits + bits;
 		}
 
 		constexpr auto pow(std::size_t pow) -> BasicInteger {
@@ -561,7 +562,7 @@ namespace dark::internal {
 		constexpr auto to_borrowed(size_type start, size_type size = base_type::npos) const noexcept -> BasicInteger {
 			auto temp = BasicInteger{};
 			temp.m_data = m_data.to_borrowed(start, size);
-			temp.m_bits = temp.calculate_used_bits();
+			temp.m_bits = compute_used_bits(temp.m_data);
 			temp.m_flags = m_flags;
 			return temp;
 		}
@@ -586,25 +587,9 @@ namespace dark::internal {
 		constexpr auto shift_by_base(size_type pow) -> BasicInteger& {
 			auto const sz = size();
 			resize(sz + pow, 0);
-			for (auto i = 0zu; i < sz; ++i) {
-				m_data[size() - 1 - i] = m_data[sz - 1 - i];
-			}
-			for (auto i = 0zu; i < pow; ++i) {
-				m_data[i] = 0;
-			}
+            std::move(rbegin() + static_cast<std::ptrdiff_t>(pow), rend(), rbegin());
+            std::fill_n(begin(), pow, 0);
 			return *this;
-		}
-
-		constexpr auto calculate_used_bits() const noexcept -> size_type {
-			auto const sz = size();
-			for (auto i = 0zu; i < sz; ++i) {
-				auto const idx = sz - 1 - i;
-				auto block = m_data[idx];
-				if (block == 0) continue;
-				auto const bw = static_cast<std::size_t>(std::bit_width(block));
-				return bw + BlockInfo::total_bits * (idx);
-			}
-			return 0;
 		}
 
 		constexpr auto operator[](size_type k) const noexcept -> const_reference {
@@ -613,6 +598,12 @@ namespace dark::internal {
 		constexpr auto operator[](size_type k) noexcept -> reference {
 			return m_data[k];
 		}	
+
+        constexpr auto replace_range(std::span<block_t> bs, size_type start, size_type end = npos) {
+            auto const sz = std::min({ end - start, size(), bs.size() });
+            end = start + sz;
+            std::copy_n(bs.begin(), sz, begin());
+        }
 	private:
 		static constexpr auto shift_left_helper(
 			BasicInteger& out,
@@ -621,7 +612,7 @@ namespace dark::internal {
 		) -> void {
 			if (should_extend) {
 				auto const diff_bits = shift;
-				auto const diff_size = (diff_bits + BlockInfo::total_bits - 1) / BlockInfo::total_bits;
+				auto const diff_size = (diff_bits + BlockInfo::block_total_bits - 1) / BlockInfo::block_total_bits;
 				out.m_data.resize(out.size() + diff_size, 0);
 			}
 			logical_left_shift(out.dyn_arr(), shift);
@@ -687,7 +678,7 @@ namespace dark::internal {
 			
 			std::copy(a.begin(), a.end(), res.begin());
 			
-			auto carry = integer::safe_add_helper(res.dyn_arr(), b.dyn_arr());
+			auto carry = integer::safe_add_helper(res.dyn_arr(), res.dyn_arr(), b.dyn_arr());
 
 			if (carry) {
 				res.set_overflow(true);
@@ -768,8 +759,8 @@ namespace dark::internal {
 				auto bits = den.bits() - 1; 
 				quot = num;
 				quot.shift_right_mut(bits - 1);
-				auto blocks = bits / BlockInfo::total_bits;
-				auto extra = bits % BlockInfo::total_bits;
+				auto blocks = bits / BlockInfo::block_total_bits;
+				auto extra = bits % BlockInfo::block_total_bits;
 				auto has_extra = static_cast<bool>(extra);
 				rem.resize(blocks + has_extra);
 				

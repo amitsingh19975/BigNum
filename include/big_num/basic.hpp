@@ -1,6 +1,8 @@
 #ifndef DARK_BIG_NUM_BASIC_HPP
 #define DARK_BIG_NUM_BASIC_HPP
 
+#include "block_info.hpp"
+#include <cstddef>
 #include <string_view>
 
 #ifndef BIG_NUM_NAIVE_THRESHOLD
@@ -73,6 +75,21 @@ namespace dark {
 		static constexpr type Underflow = 4;
 		static constexpr type IsSigned = 8;
 	};
+
+
+    namespace internal {
+        inline static constexpr auto compute_used_bits(std::span<BlockInfo::type> bs) noexcept -> std::size_t {
+            auto const sz = bs.size();
+			for (auto i = 0zu; i < sz; ++i) {
+				auto const idx = sz - 1 - i;
+				auto block = bs[idx];
+				if (block == 0) continue;
+				auto const bw = static_cast<std::size_t>(std::bit_width(block));
+				return bw + BlockInfo::block_total_bits * (idx);
+			}
+			return 0;
+        }
+    }
 }
 
 #endif // DARK_BIG_NUM_BASIC_HPP
