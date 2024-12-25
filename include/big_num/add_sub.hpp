@@ -3,6 +3,8 @@
 
 #include "block_info.hpp"
 #include <algorithm>
+#include <bit>
+#include <cstddef>
 #include <print>
 #include <span>
 
@@ -45,7 +47,7 @@ namespace dark::internal {
             for (auto i = 0zu; i < size; i += BlockSize) {
                 auto const ib = std::min(BlockSize, size - i);
 
-                BlockInfo::type cs[2][BlockSize + 1] = {};
+                BlockInfo::type cs[BlockSize + 1][BlockSize + 1] = {};
                 BlockInfo::type temp[BlockSize] = {};
 
                 cs[0][0] = carry;
@@ -56,18 +58,18 @@ namespace dark::internal {
                     cs[1][j + 1] = sum >> BlockInfo::block_total_bits;
                 }
 
-                carry = cs[1][ib];
-
                 for (auto j = 1zu; j < ib; ++j) {
-                    auto const idx = j & 1;
-                    auto const next_idx = idx ^ 1;
-                    cs[idx][0] = 0;
                     for (auto k = 0zu; k < ib; ++k) {
-                        auto sum = temp[k] + cs[idx][k];
+                        auto sum = temp[k] + cs[j][k];
                         temp[k] = sum & BlockInfo::block_lower_mask;
-                        cs[next_idx][k + 1] = sum >> BlockInfo::block_total_bits;
+                        cs[j + 1][k + 1] = sum >> BlockInfo::block_total_bits;
                     }
-                    carry += cs[next_idx][ib];
+                }
+
+                carry = 0;
+
+                for (auto j = 0zu; j < BlockSize; ++j) {
+                    carry += cs[j][ib];
                 }
 
                 for (auto k = 0zu; k < ib; ++k) {
@@ -98,65 +100,68 @@ namespace dark::internal {
 		inline static constexpr auto safe_sub_helper(
 			std::span<BlockInfo::type> out,
 			BlockInfo::accumulator_t val
-		) noexcept -> BlockInfo::accumulator_t {
+		) noexcept -> BlockInfo::type {
 			auto borrow = val;
 			for (auto index = 0zu; index < out.size() && borrow; ++index) {
 				auto res = safe_sub_helper(out[index], borrow);
 				out[index] = res.first;
 				borrow = res.second;
 			}
-			return borrow;
+			return borrow & BlockInfo::block_lower_mask;
 		}
 
-		inline static constexpr auto safe_sub_helper(
-			std::span<BlockInfo::type> out,
-			std::span<BlockInfo::type> const a,
-			BlockInfo::accumulator_t val
-		) noexcept -> BlockInfo::accumulator_t {
-			auto borrow = val;
-			auto const sz = std::min(out.size(), a.size());
-			for (auto index = 0zu; index < sz && borrow; ++index) {
-				auto res = safe_sub_helper(a[index], borrow);
-				out[index] = res.first;
-				borrow = res.second;
-			}
-			return borrow;
-		}
-		
-		inline static constexpr auto safe_sub_helper(
-			std::span<BlockInfo::type> out,
-			std::span<BlockInfo::type> const a
-		) noexcept -> BlockInfo::accumulator_t {
-			auto borrow = BlockInfo::accumulator_t{};
-			auto const size = std::min(out.size(), a.size());
-			for (auto i = 0zu; i < size; ++i) {
-				auto [acc, c] = safe_sub_helper(out[i], a[i], borrow);
-				out[i] = acc;
-				borrow = c;
-			}
-
-			auto t = std::span{out.data() + size, out.size() - size};
-			return safe_sub_helper(t, borrow);
-		}
-
+        template <std::size_t BlockSize = 32>
 		inline static constexpr auto safe_sub_helper(
 			std::span<BlockInfo::type> out,
 			std::span<BlockInfo::type> const a,
 			std::span<BlockInfo::type> const b
-		) noexcept -> BlockInfo::accumulator_t {
-			auto borrow = BlockInfo::accumulator_t{};
-			auto const size = std::min(out.size(), a.size());
-			for (auto i = 0zu; i < size; ++i) {
-				auto [acc, c] = safe_sub_helper(a[i], b[i], borrow);
-				out[i] = acc;
-				borrow = c;
-			}
+		) noexcept -> BlockInfo::type {
+			auto const size = std::min(a.size(), b.size());
+            assert(out.size() >= size);
+			auto borrow = BlockInfo::type{};
+            
+            constexpr auto max_value = BlockInfo::block_max_value & BlockInfo::block_lower_mask;
+
+            constexpr auto sub_helper = [](BlockInfo::type lhs, BlockInfo::type rhs) noexcept -> std::pair<BlockInfo::type, BlockInfo::type> {
+                auto b = lhs < rhs;
+                return { (lhs + (max_value * b - rhs)) & BlockInfo::block_lower_mask, b };
+            };
+
+
+	        for (auto i = 0zu; i < size; i += BlockSize) {
+                auto const ib = std::min(BlockSize, size - i);
+
+                BlockInfo::type bs[BlockSize + 1][BlockSize + 1] = {};
+                BlockInfo::type temp[BlockSize] = {};
+                bs[0][0] = borrow;
+
+                for (auto j = 0zu; j < ib; ++j) {
+                    auto [v0, b0] = sub_helper(a[i + j], bs[0][j]);
+                    auto [v1, b1] = sub_helper(v0, b[i + j]);
+                    temp[j] = v1;
+                    bs[1][j + 1] = b0 | b1;
+                }
+
+                borrow = bs[1][ib];
+
+                for (auto j = 1zu; j < ib; ++j) {
+                    for (auto k = 0zu; k < ib; ++k) {
+                        auto [v0, b0] = sub_helper(temp[k], bs[j][k]);
+                        bs[j + 1][k + 1] = b0;
+                        temp[k] = v0;
+                    }
+                    borrow += bs[j + 1][ib];
+                }
+
+
+                for (auto j = 0zu; j < ib; ++j) {
+                    out[i + j] = temp[j];
+                }
+            }
 
 			auto t = std::span{out.data() + size, out.size() - size};
-			auto at = std::span{a.data() + size, a.size() - size};
-			return safe_sub_helper(t, at, borrow);
+			return safe_sub_helper(t, borrow);
 		}
-
 	} // namespace integner
 
 } // namespace dark::internal

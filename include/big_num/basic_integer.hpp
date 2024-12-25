@@ -720,7 +720,7 @@ namespace dark::internal {
 			res.m_bits = std::max(a.bits(), b.bits());
 			
 			std::copy(lhs->begin(), lhs->end(), res.begin());
-			auto borrow = integer::safe_sub_helper(res.m_data, *rhs);
+			auto borrow = integer::safe_sub_helper(res.m_data, res.m_data, *rhs);
 
 			res.trim_leading_zeros();
 			
