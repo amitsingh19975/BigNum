@@ -146,7 +146,7 @@ namespace dark::internal::integer {
 					quotient[kr] = BlockInfo::block_lower_mask;
 				} else {
 					auto q = combine_two_blocks(num[ir - 1], num[ir]) / den[n - 1];
-					quotient[kr] = q & BlockInfo::lower_mask;
+					quotient[kr] = q & BlockInfo::block_lower_mask;
 
 					// [a_(i-2), a_(i-1), a_i]
 					auto t0 = num.to_borrowed_from_range(ir - 2, ir + 1);
