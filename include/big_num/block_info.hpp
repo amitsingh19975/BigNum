@@ -76,7 +76,7 @@ constexpr auto neareast_power_of_2(std::size_t num) noexcept -> std::size_t {
 		static constexpr auto calculate_blocks_from_bytes(std::size_t bytes) noexcept {
 			// INFO: we need ceil
 			// (3 + 4 - 1) / 4 => (3 + 3) => 1
-			return (bytes + total_bytes - 1) / total_bytes;
+			return (bytes + block_total_bytes - 1) / block_total_bytes;
 		} 
 	};
 #endif
@@ -117,7 +117,7 @@ constexpr auto neareast_power_of_2(std::size_t num) noexcept -> std::size_t {
 		static constexpr auto lookup_table = []{
 			std::array<std::uint8_t, 128> res;
 
-			for (auto i = 0zu; i < 128; ++i) {
+			for (auto i = 0u; i < 128u; ++i) {
 				auto inv = calculate_modular_inverse(2 * i + 1); // only odd numbers
 				res[i] = inv & 0xff;
 			}	
