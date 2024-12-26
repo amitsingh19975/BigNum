@@ -3,7 +3,6 @@
 
 #include "block_info.hpp"
 #include <algorithm>
-#include <bit>
 #include <cstddef>
 #include <print>
 #include <span>
@@ -142,7 +141,6 @@ namespace dark::internal {
                     bs[1][j + 1] = b0 | b1;
                 }
 
-                borrow = bs[1][ib];
 
                 for (auto j = 1zu; j < ib; ++j) {
                     for (auto k = 0zu; k < ib; ++k) {
@@ -150,9 +148,12 @@ namespace dark::internal {
                         bs[j + 1][k + 1] = b0;
                         temp[k] = v0;
                     }
-                    borrow += bs[j + 1][ib];
                 }
 
+                borrow = 0;
+                for (auto j = 0zu; j < BlockSize; ++j) {
+                    borrow += bs[j][ib];
+                }
 
                 for (auto j = 0zu; j < ib; ++j) {
                     out[i + j] = temp[j];
