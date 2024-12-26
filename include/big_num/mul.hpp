@@ -20,39 +20,80 @@ namespace dark::internal::integer {
 		return std::all_of(b.rbegin(), b.rend(), is_zero);
 	}
 
+    template <std::size_t BlockSize = 8>
 	inline static constexpr auto naive_mul(
 		BlockInfo::blocks_t& out,
 		BlockInfo::blocks_t const& lhs,
 		BlockInfo::blocks_t const& rhs
 	) noexcept -> void {
-	using acc_t = BlockInfo::accumulator_t;
-	if (all_zeros(lhs) || all_zeros(rhs)) {
-		out.clear();
-		return;
-	}
+        using acc_t = BlockInfo::accumulator_t;
+        if (all_zeros(lhs) || all_zeros(rhs)) {
+            out.clear();
+            return;
+        }
 
-	out.resize(lhs.size() + rhs.size());
+        out.resize(lhs.size() + rhs.size());
 
-	auto const lhs_size = lhs.size();
-	auto const rhs_size = rhs.size();
+        auto const lhs_size = lhs.size();
+        auto const rhs_size = rhs.size();
 
-	for (auto i = 0zu; i < lhs_size; ++i) {
-		auto l = acc_t{lhs[i]};
+        constexpr auto add_helper = [](auto lhs, auto rhs) -> std::pair<BlockInfo::type, BlockInfo::type> {
+            auto res = lhs + rhs;
+            return std::make_pair(res & BlockInfo::block_lower_mask, res >> BlockInfo::block_total_bits);
+        };
 
-		auto carry = acc_t {};
+        for (auto i = 0zu; i < lhs_size; ++i) {
+            auto l = acc_t{lhs[i]};
 
-		for (auto j = 0zu; j < rhs_size; ++j) {
-			auto r = acc_t{rhs[j]};
+            auto carry = BlockInfo::type {};
 
-			auto [acc, c] = safe_add_helper(out[i + j], l * r + carry);
+            for (auto m = 0zu; m < rhs_size; m += BlockSize) {
+                auto mb = std::min(BlockSize, rhs_size - m);
+                auto r_ptr = rhs.data() + m;
 
-			out[i + j] = acc;
-			carry = c;
-		}
-		
-		auto temp = out.to_borrowed(rhs_size + i);
-		safe_add_helper(temp, carry);
-	}
+                BlockInfo::type cs[BlockSize + 1][BlockSize + 1] = {};
+                BlockInfo::type temp[BlockSize] = {};
+
+
+                // 1. In the first pass, we populate temp with multiplication
+                for (auto j = 0zu; j < mb; ++j) {
+                    auto r = acc_t{r_ptr[j]};
+                    auto res = l * r;
+                    BlockInfo::type acc = res & BlockInfo::block_lower_mask;
+                    BlockInfo::type c = (res >> BlockInfo::block_total_bits) & BlockInfo::block_lower_mask;
+                    temp[j] = acc;
+                    cs[0][j + 1] = c;
+                }
+
+                cs[0][0] = carry;
+
+                for (auto j = 0zu; j < mb; ++j) {
+                    auto [res, c] = add_helper(temp[j], out[i + m + j] + cs[0][j]);
+                    temp[j] = res;
+                    cs[1][j + 1] = c;
+                }
+
+                for (auto j = 1zu; j < mb; ++j) {
+                    for (auto k = 0zu; k < mb; ++k) {
+                        auto [acc, c] = add_helper(temp[k], cs[j][k]);
+                        temp[k] = acc;
+                        cs[j + 1][k + 1] = c;
+                    }
+                }
+
+                carry = 0;
+
+                for (auto k = 0zu; k < BlockSize; ++k) {
+                    carry += cs[k][mb];
+                }
+
+                for (auto k = 0zu; k < mb; ++k) {
+                    out[i + m + k] = temp[k];
+                }
+            }            
+            auto temp = out.to_borrowed(rhs_size + i);
+            safe_add_helper(temp, carry);
+        }
 	}
 
 	template <std::size_t NaiveThreshold>
