@@ -158,7 +158,7 @@ namespace dark::internal {
 			I num
 		) noexcept -> std::expected<BasicInteger, std::string> {
 			using type = std::decay_t<std::remove_cvref_t<I>>;
-			using unsigned_type = std::make_unsigned_t<type>;
+			using unsigned_type = to_unsigned<type>::type;
 
 			constexpr auto bytes = sizeof(unsigned_type);
 			auto res = BasicInteger{};
@@ -182,30 +182,14 @@ namespace dark::internal {
 				return res;
 			}
 
-			res.resize(BlockInfo::calculate_blocks_from_bytes(bytes) + 1, block_t{});
 
-			constexpr auto ps = (sizeof(I) + sizeof(block_t) - 1) / sizeof(block_t);
-			block_t buff[ps] = {0};
+            constexpr auto bytes_needed = BlockInfo::calculate_blocks_from_bytes(bytes) + 1;
+			res.resize(bytes_needed, block_t{});
 
-			auto temp_num = new_num;
-			for (auto i = 0zu; i < ps; ++i) {
-				constexpr auto bs = sizeof(block_t) * CHAR_BIT;
-				auto n = temp_num % bs;
-				temp_num /= bs;
-				buff[i] = static_cast<block_t>(n);
-			}
-
-			auto ptr = res.data();
-			
-			auto const size = res.size();
-			for (auto i = 0zu; i < ps; i++) {
-				auto carry = block_acc_t{buff[i]};
-				for (auto j = 0zu; j < size; ++j) {
-					auto const o = block_acc_t{ptr[j]};
-					auto [a, c] = integer::safe_add_helper(o * 10, carry);
-					ptr[j] = a;
-					carry = c;
-				}
+			for (auto i = 0zu; i < bytes_needed; ++i) {
+				auto n = new_num % BlockInfo::block_max_value;
+				new_num /= BlockInfo::block_max_value;
+				res[i] = static_cast<block_t>(n);
 			}
 
 			res.set_is_neg(is_neg);
@@ -329,52 +313,63 @@ namespace dark::internal {
 		std::string to_str(Radix radix = Radix::Dec, bool with_prefix = false, std::optional<char> separator = {}) const {
 			std::string s;
 
-			if (is_zero()) {
+            auto sz = 0zu;
+            for (auto i = 0zu; i < size(); ++i) {
+                if (m_data[size() - i - 1] != 0) break;
+                ++sz;
+            }
+            sz = size() - sz;
+
+			if (is_zero() || sz == 0) {
 				s = get_prefix(radix);
 				s += "0";
 				return s;
 			}
-			auto get_digit = [this](auto i) { return m_data[size() - i - 1]; };
+
+			auto get_digit = [this, sz](auto i) { return m_data[sz - i - 1]; };
+
+            auto bits = compute_used_bits(m_data);
 
 			switch (radix) {
 				case Radix::Binary: {
-					s.resize(bits() + 2);
+					s.resize(bits + 2);
 					utils::basic_convert_to_block_radix<2>(
 						s.data(),
 						BlockInfo::block_max_value,
-						size(),
+						sz,
 						get_digit
 					);
 				} break;
 				case Radix::Octal: {
-					s.resize(bits() + 2);
+					s.resize(bits + 2);
 					utils::basic_convert_to_block_radix<8>(
 						s.data(),
 						BlockInfo::block_max_value,
-						size(),
+						sz,
 						get_digit
 					);
 				} break;
 				case Radix::Hex: {
-					s.resize(bits() / 4 + 2, 0);
+					s.resize(bits / 4 + 2, 0);
 					utils::basic_convert_to_block_radix<16>(
 						s.data(),
 						BlockInfo::block_max_value,
-						size(),
+						sz,
 						get_digit
 					);
 				} break;
 				case Radix::Dec: case Radix::None: {
-					s.resize(bits() / 2 + 2, 0);
+					s.resize(bits / 2 + 2, 0);
 					utils::basic_convert_to_block_radix<10>(
 						s.data(),
 						BlockInfo::block_max_value,
-						size(),
+						sz,
 						get_digit
 					);
 				} break;
 				default: std::unreachable();
 			}
+
 			while (!s.empty() && s.back() == 0) s.pop_back();
 			if (s.empty()) {
 				s = get_prefix(radix);
@@ -499,7 +494,7 @@ namespace dark::internal {
 			return !(b & (b - 1));
 		}
 
-		constexpr auto trim_leading_zeros() noexcept -> void {
+		constexpr auto trim_leading_zeros() noexcept -> std::size_t {
 			auto i = 0zu;
 			for (; i < size(); ++i) {
 				auto idx = size() - i - 1;
@@ -512,34 +507,39 @@ namespace dark::internal {
 				set_is_neg(false);
 				m_bits = 0;
 				m_flags = 0;
-				return;
+				return i;
 			}
 			auto bits = static_cast<std::size_t>(std::bit_width(m_data.back()));
 			m_bits = (size() - 1) * BlockInfo::block_total_bits + bits;
+            return i;
 		}
 
-		constexpr auto trim_trailing_zeros() noexcept -> void {
+		constexpr auto trim_trailing_zeros() noexcept -> std::size_t {
 			auto i = 0zu;
 			for (; i < size(); ++i) {
 				if (m_data[i]) break;
 			}
 
-			if (i == size()) {
-				m_data.clear();
-			} else if (i != 0) {
-				std::move(begin() + i, end() - i, begin());
-				resize(size() - i);
-			}
+            pop_front(i);
+            if (m_data.empty()) return i;
 
-			if (m_data.empty()) {
-				set_is_neg(false);
-				m_bits = 0;
-				m_flags = 0;
-				return;
-			}
 			auto bits = static_cast<std::size_t>(std::bit_width(m_data.back()));
 			m_bits = (size() - 1) * BlockInfo::block_total_bits + bits;
+            return i;
 		}
+
+        constexpr auto pop_front(size_type n = 1) noexcept -> void {
+            if (n == 0) return;
+            if (n == size()) m_data.clear();
+            else {
+                std::move(begin() + n, end() - n, begin());
+                resize(size() - n);
+            }
+            if (m_data.empty()) {
+                m_bits = 0;
+                m_flags = 0;
+            }
+        }
 
 		constexpr auto pow(std::size_t pow) -> BasicInteger {
 			auto res = *this;
@@ -601,7 +601,6 @@ namespace dark::internal {
 
         constexpr auto replace_range(std::span<block_t> bs, size_type start, size_type end = npos) {
             auto const sz = std::min({ end - start, size(), bs.size() });
-            end = start + sz;
             std::copy_n(bs.begin(), sz, begin());
         }
 	private:

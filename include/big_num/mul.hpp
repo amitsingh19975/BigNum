@@ -104,8 +104,8 @@ namespace dark::internal::integer {
 		std::size_t size,
 		std::size_t depth = 0
 	) noexcept -> void {
-		using block_t = typename BlockInfo::type;
 		using acc_t = typename BlockInfo::accumulator_t;
+        using blocks_t = typename BlockInfo::blocks_t;
 
 		if (size <= NaiveThreshold) {
 			auto old_size = out.size();
@@ -134,12 +134,12 @@ namespace dark::internal::integer {
 		assert(!yl.is_owned());
 		assert(!yu.is_owned());
 
-		auto x_sum = DynArray<block_t>(high * 2 + /* carry */ 1, 0);
-		auto y_sum = DynArray<block_t>(high * 2 + /* carry */ 1, 0);
+		auto x_sum = blocks_t(high * 2 + /* carry */ 1, 0);
+		auto y_sum = blocks_t(high * 2 + /* carry */ 1, 0);
 		auto const sz = (high << 1) + 1;
-		auto z0 = DynArray<block_t>(sz, 0);
-		auto z2 = DynArray<block_t>(sz, 0);
-		auto z3 = DynArray<block_t>(sz, 0);
+		auto z0 = blocks_t(sz, 0);
+		auto z2 = blocks_t(sz, 0);
+		auto z3 = blocks_t(sz, 0);
 
 		auto l_carry = acc_t{};
 		auto r_carry = acc_t{};
@@ -203,7 +203,7 @@ namespace dark::internal::integer {
 		}
 	}
 
-	template <std::size_t NaiveThreshold>
+	template <std::size_t NaiveThreshold = BIG_NUM_NAIVE_THRESHOLD>
 	inline static constexpr auto karatsuba_mul(
 		BlockInfo::blocks_t& out,
 		BlockInfo::blocks_t const& lhs,

@@ -6,26 +6,31 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 namespace dark::internal {
 
-constexpr auto neareast_power_of_2(std::size_t num) noexcept -> std::size_t {
-	if ((num & (num - 1)) == 0) return num;
-	--num;
-	num |= (num >> 1);	
-	num |= (num >> 2);	
-	num |= (num >> 4);	
-	num |= (num >> 8);	
-	num |= (num >> 16);	
-	num |= (num >> 32);	
-	++num;
-	return num;
-}
+    constexpr auto neareast_power_of_2(std::size_t num) noexcept -> std::size_t {
+        if ((num & (num - 1)) == 0) return num;
+        --num;
+        num |= (num >> 1);	
+        num |= (num >> 2);	
+        num |= (num >> 4);	
+        num |= (num >> 8);	
+        num |= (num >> 16);	
+        num |= (num >> 32);	
+        ++num;
+        return num;
+    }
 
-#if defined(UINT128_MAX) || defined(__SIZEOF_INT128__)
 	struct BlockInfo {
+#if defined(UINT128_MAX) || defined(__SIZEOF_INT128__)
 		using type = std::uint64_t;
 		using accumulator_t = __uint128_t;
+#else
+		using type = std::uint32_t;
+		using accumulator_t = std::uint64_t;  
+#endif
 		using blocks_t = DynArray<type>;
 		static constexpr auto block_total_bytes = sizeof(type);
 		static constexpr auto block_total_bits = block_total_bytes * 8 - 2;
@@ -48,38 +53,22 @@ constexpr auto neareast_power_of_2(std::size_t num) noexcept -> std::size_t {
 			// (3 + 8 - 1) / 8 => (3 + 7) => 1
 			return (bytes + block_total_bytes - 1) / block_total_bytes;
 		}
-		/**/
-		/*template <std::size_t N>*/
-		/*static constexpr auto get_mod() const noexcept -> accumulator_t {}*/
 	};
-#else
-	struct BlockInfo {
-		using type = std::uint32_t;
-		using accumulator_t = std::uint64_t;  
-		using blocks_t = DynArray<type>;
-		static constexpr auto block_total_bytes = sizeof(type);
-		static constexpr auto block_total_bits = block_total_bytes * 8 - 2;
-		static constexpr auto block_max_value = accumulator_t{1} << block_total_bits;
-		static constexpr auto block_lower_mask = block_max_value - 1;
 
-		static constexpr auto total_acc_bytes = sizeof(accumulator_t);
-		static constexpr auto total_acc_bits = total_acc_bytes * 8;
-		static constexpr auto total_bits = block_total_bytes * 8;
-		static constexpr auto max_value = accumulator_t{1} << total_bits;
-		static constexpr auto lower_mask = max_value - 1;
-		
-		
-		// For NTT
-		static constexpr accumulator_t mod		= 43 * (accumulator_t{1} << 26) + 1;
-		static constexpr accumulator_t generator = 3;
+    template <typename T>
+    struct to_unsigned {
+        using type = std::make_unsigned_t<T>;
+    };
 
-		static constexpr auto calculate_blocks_from_bytes(std::size_t bytes) noexcept {
-			// INFO: we need ceil
-			// (3 + 4 - 1) / 4 => (3 + 3) => 1
-			return (bytes + block_total_bytes - 1) / block_total_bytes;
-		} 
-	};
-#endif
+    template <>
+    struct to_unsigned<BlockInfo::type> {
+        using type = BlockInfo::type;
+    };
+
+    template <>
+    struct to_unsigned<BlockInfo::accumulator_t> {
+        using type = BlockInfo::accumulator_t;
+    };
 
 	inline static constexpr auto combine_two_blocks(
 		BlockInfo::accumulator_t a0,
@@ -142,7 +131,7 @@ constexpr auto neareast_power_of_2(std::size_t num) noexcept -> std::size_t {
 				inv = (1 - n * inv) * inv + inv;  // 32 bits
 			}
 
-			return inv;
+			return inv & M;
 		}
 
 		constexpr auto inv(BlockInfo::type n) const noexcept -> BlockInfo::accumulator_t {
@@ -150,8 +139,7 @@ constexpr auto neareast_power_of_2(std::size_t num) noexcept -> std::size_t {
             if (n & 1) return this->operator()(n);
 
 			auto n_z = std::countr_zero(n);
-			constexpr auto mod_z = std::countr_zero(M);
-
+			constexpr auto mod_z = std::bit_width(M);
 			assert((n_z <= mod_z) && "Mod should be bigger than the 'n'");
 
 			auto n_odd = n >> n_z;
@@ -159,8 +147,7 @@ constexpr auto neareast_power_of_2(std::size_t num) noexcept -> std::size_t {
 			
 			BlockInfo::accumulator_t inv = mod_odd == 1 ? 1 : this->operator()(n_odd);
 
-			auto const power_correction = mod_z - n_z;
-			return (inv << power_correction) & M;
+			return inv;
 		}	
 	};
 
