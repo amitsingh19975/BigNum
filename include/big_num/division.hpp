@@ -6,7 +6,6 @@
 #include "type_traits.hpp"
 #include <bit>
 #include <cassert>
-#include <cmath>
 #include <cstddef>
 #include <type_traits>
 
@@ -81,7 +80,7 @@ namespace dark::internal::integer {
 		is_basic_integer auto const& denominator,
 		is_basic_integer auto& quotient
 	) noexcept -> bool {
-		using integer = std::decay_t<decltype(numerator)>;
+		/*using integer = std::decay_t<decltype(numerator)>;*/
 		// N: a_0 * B^0 + a_1 * B^1 .... + a_m-1 * B^(m-1)
 		// D: b_0 * B^0 + b_1 * B^1 .... + b_n-1 * B^(n-1)
 		// Q: q_0 * B^0 + q_1 * B^1 .... + q_k-1 * B^(k-1), k <= m - n + 1
@@ -89,25 +88,32 @@ namespace dark::internal::integer {
 		auto const m = numerator.size();
 		auto const n = denominator.size();
 
-		assert(m > 2 && "expecting numerator to be greater than 2");
-		assert(n > 2 && "expecting denominator to be greater than 2");
+        if (n == 0) return false;
+        if (m == 0) return true;
 
 		// Cond 1: m >= n > 1
 		if (m < n) return false;
 
-		if (m == n && m == 1) {
-			auto N = numerator[0];
-			auto D = denominator[0];
+		if (m < 3 && n < 3) {
+            auto N = combine_two_blocks(numerator[0], numerator.size() > 1 ? numerator[1] : 0);
+            auto D = combine_two_blocks(denominator[0], denominator.size() > 1 ? denominator[1] : 0);
 			if (N % D != 0) return false;
 
-			quotient[0] = N / D;
+            auto res = N / D;
+            auto [r0, r1, r2] = split_into_blocks(res);
+            quotient.dyn_arr().resize(3);
+            quotient[0] = r0;
+            quotient[1] = r1;
+            quotient[2] = r2;
+            quotient.trim_leading_zeros();
 			return true;
 		}
 
 		// Cond 2: numerator >= denominator 
-		if (numerator < denominator) return false;
+		if (numerator.abs_less(denominator)) return false;
 	
 		quotient.dyn_arr().resize(m - n + 1, 0);
+
 		// High-order part of quotient
 		auto const high_order = [&quotient](auto num, auto den, std::size_t h) -> bool {
 			// 1 < h <= m - n +1, where h is length of high order part
@@ -119,76 +125,79 @@ namespace dark::internal::integer {
 			if (m == n && num[m - 1] < den[n - 1]) return false;
 
 			// 1. Normalize: remove leading zeros;
-			num.trim_leading_zeros();
-			den.trim_leading_zeros();
 			if (den.is_zero()) return false;
 			if (num.is_zero()) return true;
 
 			auto d = BlockInfo::block_total_bits - static_cast<std::size_t>(std::bit_width(den[n - 1]));
-			auto I = std::max(0zu, m - n - h);
+			auto I = std::max(h, m - n) - h;
 
 			//   num = num * 2^d
 			num <<= d;
 			//   den = den * 2^d
 			den <<= d;
-			
+
 			m = num.size();
 			n = den.size();
 
+            auto const last_den = den[n - 1];
+
 			// 2.Initialize loop
-			auto const k_begin = I + 1;
-			for (auto i = 3zu, k = k_begin; i < m && k < m - n; ++i, k++) {
-				auto ir = m - i - 1;
-				auto kr = m - n - k - 1;
-
+			for (auto k = m - n - 1, i = m - 1; k > I + 1; --k, --i) {
 				// 3.Calculate quotient digit
-				if(num[ir] >= den[n - 1]) {
-					quotient[kr] = BlockInfo::block_lower_mask;
+				if(num[i] >= last_den) {
+					quotient[k] = BlockInfo::block_lower_mask;
 				} else {
-					auto q = combine_two_blocks(num[ir - 1], num[ir]) / den[n - 1];
-					quotient[kr] = q & BlockInfo::block_lower_mask;
+					auto q = combine_two_blocks(num[i - 1], num[i]) / last_den;
+					quotient[k] = q & BlockInfo::block_lower_mask;
+                    auto qk = quotient[k];
+                    
+                    // [a_i, a_(i-1), a_(i-2)]
+                    auto t0 = num.to_borrowed_from_range(i - 2, i + 1);
 
-					// [a_(i-2), a_(i-1), a_i]
-					auto t0 = num.to_borrowed_from_range(ir - 2, ir + 1);
-					auto b0 = integer(den[n - 1]) * q;
-					auto b1 = integer(den[n - 2]) * q;
-					auto t1 = b0 + b1;
-                    auto t2 = t0 - t1;
-					if (t2.is_neg()) {
-						quotient[kr] -= 1;
-						// [b_(n-1), b_(n-2)]
-						auto t3 = den.to_borrowed(n - 2, n);
-                        t2 += t3;
-                        num.replace_range(t2.dyn_arr(), ir - 2);
-					}
+                    auto b = den.to_borrowed(n - 1, 1) * qk;
+                    auto b2 = den.to_borrowed(n - 2, 1) * qk;
+                    b.shift_by_base(1);
+
+                    b += b2;
+                    
+                    auto is_neg = safe_sub_helper(t0.dyn_arr(), t0.dyn_arr(), b.dyn_arr());
+
+                    if (is_neg) {
+                        quotient[k] -= 1;
+                        auto d_temp = den.to_borrowed_from_range(n - 2, n);
+                        safe_add_helper(t0.dyn_arr(), t0.dyn_arr(), d_temp);
+                    }
                 }
 
 				// 4. Multiply and subtract
-				auto J = static_cast<std::size_t>(std::max(0ll, static_cast<std::ptrdiff_t>(m - h) - 2ll - static_cast<std::ptrdiff_t>(k) ));
-
+                auto j0 = h + k + 2;
+                auto J = std::max(j0, m) - j0;
 				
 				// [a_i, ..., a_(k+J)]
-				auto a = num.to_borrowed_from_range(kr + J, ir + 1);;
-				// [b_(n-1), ..., b_J]
-				auto b = den.to_borrowed_from_range(J, n);
-				auto temp = b * quotient[kr];
-				if (a < temp) {
+				auto a = num.to_borrowed_from_range(k + J, i + 1);
+				// [b_(n-3), ..., b_J]
+				auto b = den.to_borrowed_from_range(J, n - 3 + 1) * quotient[k];
+                
+                auto is_neg = safe_sub_helper(a.dyn_arr(), a.dyn_arr(), b.dyn_arr());
+
+				if (is_neg) {
 					// 6. Add back
-					quotient[kr] -= 1;
-				} else {
-                    auto t0 = a - b;
-                    num.replace_range(t0.dyn_arr(), kr + J, ir + 1);
-                    // 7. Remainder overflow?
-                    if (num[ir] != 0) return false;
-                    num.trim_leading_zeros();
-                }
+					quotient[k] -= 1;
+                    auto b1 = den.to_borrowed_from_range(J, n - 2);
+                    safe_add_helper(a.dyn_arr(), a.dyn_arr(), b1.dyn_arr());
+				} 
+
+                // 7. Remainder overflow?
+                if (num[i] != 0) return false;
+
 			}
 
             if (num[m - h] == 0 && num[m - h - 1] < m - h - 2) return false;
 
-			// TODO: 10. Final remainder large small
-            auto remainder = num.to_borrowed_from_range(m - h, m - n + 1 - h);
+			// 10. Final remainder large small
+            auto remainder = num.to_borrowed_from_range(m - h, I + 1);
             if (remainder >= den) return false;
+
             return true;
 		};
 	
@@ -198,54 +207,84 @@ namespace dark::internal::integer {
 			auto n = den.size();
 
 			// 1. Right-shift and trim trailing zeros
-			num.trim_trailing_zeros();
-			den.trim_trailing_zeros();
+            auto const zs = den.trim_trailing_zeros();
+            num.pop_front(zs);
+
 			if (den.is_zero()) return false;
 			if (num.is_zero()) return true;
 
-			auto d = BlockInfo::block_total_bits - static_cast<std::size_t>(std::bit_width(den[0]));
-			auto L = std::min(n, l);
+            assert(std::countr_zero(den[0]) <= std::countr_zero(num[0]));
 
-			if (n == 0) return false;
-			if (m == 0) return true;
 			if (m < n) return false;
+			auto d = static_cast<std::size_t>(std::countr_zero(den[0]));
+			auto L = std::min(n, l);
 
 			num >>= d;
 			den >>= d;
 
+            auto N = num.to_borrowed(0, l);
+            auto& D = den;
+
 			// 2. Compute modular inverse
-			auto const b_inv = BinaryModularInv<BlockInfo::block_lower_mask>{}.inv(den[0]);
+            auto const b_inv = BinaryModularInv<BlockInfo::block_lower_mask>{}(D[0]);
 
 			// 3. Initialize loop
 			for (auto k = 0zu; k < l; ++k) {
-				if (num.is_zero()) break;
-
 				// 4. Calculate quotient digit
-				quotient[k] = (b_inv * num[k]) & BlockInfo::block_lower_mask;
-				if (k == l - 1) break;
+				quotient[k] = (b_inv * N[k]) & BlockInfo::block_lower_mask;
 
-				auto const J = std::min(L, l - k);
-				auto b0 = den.to_borrowed(0, J) * quotient[k];
-				auto a0 = num.to_borrowed_from_range(k, l);
-                auto t = a0 - b0;
-                num.replace_range(t.dyn_arr(), k, l);
-				num.trim_trailing_zeros();
+                if (l == k + 1) {
+                    break;
+                }
+
+                // 6. Multiply and Subtract
+                auto J = std::min(L, l - k);
+
+                auto a0 = N.to_borrowed(k);
+				auto b0 = D.to_borrowed(0, J);
+                /*if (k >= 52 && k < 54) {*/
+                /*    std::println("Before b0[{}]: {} * {}", k, b0.dyn_arr(), quotient[k]);*/
+                /*}*/
+
+                b0 = b0 * quotient[k];
+
+
+                /*if (k >= 52 && k < 54) {*/
+                /*    std::println("a0: {}\n\nb0: {}", a0.dyn_arr(), b0.dyn_arr());*/
+                /*}*/
+
+                safe_sub_helper(a0.dyn_arr(), a0.dyn_arr(), b0.dyn_arr());
+
+                /*if (k >= 52 && k < 54) {*/
+                /*    std::println("\nres: {}\n\n", a0.dyn_arr());*/
+                /*}*/
+                assert(N[k] == 0);
 			}
 
             return true;
 		};
+
+        if (n < 3) {
+            if (!low_order(numerator, denominator, quotient.size())) {
+                return false;
+            }
+            quotient.trim_leading_zeros();
+            return true;
+        }
 		
         std::size_t h = m;
     
-        if (n > 3 && m < 3 * n - 6) {
-            h = (m - n) >> 1;
-        } else if (n != 1) {
-            h = m - 2 * (n + 1);
+        if (m < 3 * n - 6) {
+            h = quotient.size() >> 1;
+        } else {
+            h = quotient.size() - n + 2;
         }
 
-        auto const l = m - h;
+        std::size_t l = quotient.size() + 1 - h;
 
-        if (!high_order(numerator, denominator, h)) {
+        /*std::println("h: {}, l {}, q: {}, m: {}, n: {}", h, l, quotient.size(), m, n);*/
+
+        if (h > 0 && !high_order(numerator, denominator, h)) {
             return false;
         }
 
