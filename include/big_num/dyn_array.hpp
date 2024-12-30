@@ -91,11 +91,13 @@ namespace dark {
 			, m_owned(other.m_owned)
 			, m_alloc(other.m_alloc)
 		{
-			other.m_data = nullptr;
-			other.m_capacity = 0;
-			other.m_size = 0;
-			other.m_owned = true;
-		}
+
+            other.m_data = nullptr;
+            other.m_capacity = 0;
+            other.m_size = 0;
+            other.m_owned = true;
+           
+        }
 
 		constexpr DynArray& operator=(DynArray&& other) noexcept {
 			if (this == &other) return *this;
@@ -154,6 +156,7 @@ namespace dark {
 
 		void resize(size_type size, value_type def = {}) noexcept {
 			to_owned();
+
 			if (m_size == size) return;
 			ensure_space_for(size);
 			for (auto i = m_size; i < size; ++i) m_data[i] = def;

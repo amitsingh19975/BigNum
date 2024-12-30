@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <bit>
 #include <cassert>
-#include <climits>
 #include <concepts>
 #include <cstddef>
 #include <limits>
@@ -279,6 +278,13 @@ namespace dark::internal {
 			div_impl(result.quot, result.rem, *this, other, kind);
 			return result;
 		}
+
+        constexpr auto exact_div(BasicInteger const& divisor) const -> BasicInteger {
+            auto q = BasicInteger();
+            [[maybe_unused]] auto res = integer::exact_div(*this, divisor, q);
+            assert(res && "numerator is not divisble by divisor");
+            return q;
+        }
 
 		constexpr auto bitwise_or(BasicInteger const& other) const -> BasicInteger {
 			auto res = *this;
@@ -567,7 +573,6 @@ namespace dark::internal {
 			return temp;
 		}
 
-
 		// ranage: [start, end)
 		// This is an exculsive range or end is not included in the range.
 		constexpr auto to_borrowed_from_range(size_type start, size_type end) const noexcept -> BasicInteger {
@@ -597,12 +602,19 @@ namespace dark::internal {
 		}
 		constexpr auto operator[](size_type k) noexcept -> reference {
 			return m_data[k];
-		}	
+		}
 
-        constexpr auto replace_range(std::span<block_t> bs, size_type start, size_type end = npos) {
+        constexpr auto replace_range(std::span<block_t> bs, size_type start, size_type end = npos) -> void {
             auto const sz = std::min({ end - start, size(), bs.size() });
             std::copy_n(bs.begin(), sz, begin());
         }
+
+		constexpr auto abs_less(BasicInteger const& other) const noexcept -> bool {
+			if (bits() < other.bits()) return true;
+			else if (bits() > other.bits()) return false;
+			return compare(*this, other, std::less<>{});
+		} 
+
 	private:
 		static constexpr auto shift_left_helper(
 			BasicInteger& out,
@@ -639,12 +651,6 @@ namespace dark::internal {
 			out.trim_leading_zeros();
 		}
 		
-		constexpr auto abs_less(BasicInteger const& other) const noexcept -> bool {
-			if (bits() < other.bits()) return true;
-			else if (bits() > other.bits()) return false;
-			return compare(*this, other, std::less<>{});
-		} 
-
 		constexpr auto exponential_pow(std::size_t pow) -> void {
 			auto res = BasicInteger{};
 			res.m_data.reserve(size() * pow);

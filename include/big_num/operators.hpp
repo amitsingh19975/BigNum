@@ -169,7 +169,7 @@ constexpr decltype(auto) operator<<(L const& lhs, R rhs) noexcept {
 
 template <typename L, typename R>
 	requires (dark::internal::is_basic_integer<L> && std::integral<R>)
-constexpr decltype(auto) operator<<=(L& lhs, R rhs) noexcept {
+constexpr auto operator<<=(L& lhs, R rhs) noexcept -> L& {
 	assert(rhs >= 0);
 	auto shift = static_cast<std::size_t>(rhs);
 	return lhs.shift_left_mut(shift, true);
@@ -185,7 +185,7 @@ constexpr decltype(auto) operator>>(L const& lhs, R rhs) noexcept {
 
 template <typename L, typename R>
 	requires (dark::internal::is_basic_integer<L> && std::integral<R>)
-constexpr decltype(auto) operator>>=(L& lhs, R rhs) noexcept {
+constexpr auto operator>>=(L& lhs, R rhs) noexcept -> L& {
 	assert(rhs >= 0);
 	auto shift = static_cast<std::size_t>(rhs);
 	return lhs.shift_right_mut(shift);
@@ -211,7 +211,7 @@ constexpr decltype(auto) operator+(L const& lhs, R const& rhs) {
 
 template <typename L, typename R>
 	requires dark::internal::is_valid_big_num_mut_operator_arg<L, R>
-constexpr decltype(auto) operator+=(L& lhs, R const& rhs) {
+constexpr auto operator+=(L& lhs, R const& rhs) -> L& {
 	using namespace dark::internal;
 	using lhs_t = std::decay_t<L>;
 
@@ -245,7 +245,7 @@ constexpr decltype(auto) operator-(L const& lhs, R const& rhs) {
 
 template <typename L, typename R>
 	requires dark::internal::is_valid_big_num_mut_operator_arg<L, R>
-constexpr decltype(auto) operator-=(L& lhs, R const& rhs) {
+constexpr auto operator-=(L& lhs, R const& rhs) -> L& {
 	using namespace dark::internal;
 	using lhs_t = std::decay_t<L>;
 
@@ -278,7 +278,7 @@ constexpr decltype(auto) operator*(L const& lhs, R const& rhs) {
 
 template <typename L, typename R>
 	requires dark::internal::is_valid_big_num_mut_operator_arg<L, R>
-constexpr decltype(auto) operator*=(L& lhs, R const& rhs) {
+constexpr auto operator*=(L& lhs, R const& rhs) -> L& {
 	using namespace dark::internal;
 	using lhs_t = std::decay_t<L>;
 
@@ -312,7 +312,7 @@ constexpr decltype(auto) operator/(L const& lhs, R const& rhs) {
 
 template <typename L, typename R>
 	requires dark::internal::is_valid_big_num_mut_operator_arg<L, R>
-constexpr decltype(auto) operator/=(L& lhs, R const& rhs) {
+constexpr auto operator/=(L& lhs, R const& rhs) -> L& {
 	auto res = lhs / rhs;
 	lhs = std::move(res);
 	return res;
@@ -339,7 +339,7 @@ constexpr decltype(auto) operator%(L const& lhs, R const& rhs) {
 
 template <typename L, typename R>
 	requires dark::internal::is_valid_big_num_mut_operator_arg<L, R>
-constexpr decltype(auto) operator%=(L& lhs, R const& rhs) {
+constexpr auto operator%=(L& lhs, R const& rhs) -> L& {
 	auto res = lhs % rhs;
 	lhs = std::move(res);
 	return res;
@@ -366,7 +366,7 @@ constexpr decltype(auto) operator|(L const& lhs, R const& rhs) {
 
 template <typename L, typename R>
 	requires dark::internal::is_valid_big_num_mut_operator_arg<L, R>
-constexpr decltype(auto) operator|=(L& lhs, R const& rhs) {
+constexpr auto operator|=(L& lhs, R const& rhs) -> L& {
 	using namespace dark::internal;
 	using lhs_t = std::decay_t<L>;
 
@@ -400,7 +400,7 @@ constexpr decltype(auto) operator&(L const& lhs, R const& rhs) {
 
 template <typename L, typename R>
 	requires dark::internal::is_valid_big_num_mut_operator_arg<L, R>
-constexpr decltype(auto) operator&=(L& lhs, R const& rhs) {
+constexpr auto operator&=(L& lhs, R const& rhs) -> L& {
 	using namespace dark::internal;
 	using lhs_t = std::decay_t<L>;
 

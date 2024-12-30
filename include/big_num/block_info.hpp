@@ -35,14 +35,14 @@ namespace dark::internal {
 		static constexpr auto block_total_bytes = sizeof(type);
 		static constexpr auto block_total_bits = block_total_bytes * 8 - 2;
 		static constexpr auto block_max_value = accumulator_t{1} << block_total_bits;
-		static constexpr auto block_lower_mask = block_max_value - 1;
+		static constexpr type block_lower_mask = block_max_value - 1;
 
 		static constexpr auto total_acc_bytes = sizeof(accumulator_t);
 		static constexpr auto total_acc_bits = total_acc_bytes * 8;
 
 		static constexpr auto total_bits = block_total_bytes * 8;
 		static constexpr auto max_value = accumulator_t{1} << total_bits;
-		static constexpr auto lower_mask = max_value - 1;
+		static constexpr type lower_mask = max_value - 1;
 		
 		// For NTT
 		static constexpr accumulator_t mod		= 71 * (accumulator_t{1} << 57) + 1;
@@ -147,7 +147,7 @@ namespace dark::internal {
 			
 			BlockInfo::accumulator_t inv = mod_odd == 1 ? 1 : this->operator()(n_odd);
 
-			return inv;
+			return inv << n_z;
 		}	
 	};
 
