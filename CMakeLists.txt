@@ -7,6 +7,7 @@ project(big-num CXX)
 include(cmake/StandardProjectSettings.cmake)
 
 include_directories(include)
+include_directories(vendor/simd/include)
 
 add_library(project_options INTERFACE)
 add_library(project_warnings INTERFACE)
