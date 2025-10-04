@@ -1,0 +1,3 @@
+[submodule "vendor/simd"]
+	path = vendor/simd
+	url = git@github.com:amitsingh19975/Unified-Intrinsics.git

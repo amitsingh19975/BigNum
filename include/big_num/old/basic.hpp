@@ -2,6 +2,7 @@
 #define DARK_BIG_NUM_BASIC_HPP
 
 #include "block_info.hpp"
+#include <algorithm>
 #include <cstddef>
 #include <string_view>
 
@@ -80,12 +81,22 @@ namespace dark {
     namespace internal {
         inline static constexpr auto compute_used_bits(std::span<BlockInfo::type> bs) noexcept -> std::size_t {
             auto const sz = bs.size();
-			for (auto i = 0zu; i < sz; ++i) {
-				auto const idx = sz - 1 - i;
-				auto block = bs[idx];
-				if (block == 0) continue;
+            if (sz == 0) return 0;
+
+            constexpr auto cal = [](auto block, std::size_t left) {
 				auto const bw = static_cast<std::size_t>(std::bit_width(block));
-				return bw + BlockInfo::block_total_bits * (idx);
+				return bw + BlockInfo::block_total_bits * (left);
+            };
+
+            constexpr auto block_size = 32zu;
+
+			for (auto i = 0zu; i < sz; i += block_size) {
+                auto const ib = std::min(block_size, sz - i);
+				auto const idx = sz - 1 - i;
+                for (auto j = 0zu; j < ib; ++j) {
+                    auto block = bs[idx - j];
+                    if (block) return cal(block, idx - j);
+                }
 			}
 			return 0;
         }

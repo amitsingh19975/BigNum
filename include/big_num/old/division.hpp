@@ -2,11 +2,15 @@
 #define DARK_BIG_NUM_DIVISION_HPP
 
 #include "add_sub.hpp"
+#include "big_num/basic.hpp"
 #include "block_info.hpp"
 #include "type_traits.hpp"
+#include <algorithm>
 #include <bit>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
+#include <print>
 #include <type_traits>
 
 namespace dark::internal::integer {
@@ -50,11 +54,13 @@ namespace dark::internal::integer {
 		is_basic_integer auto& quotient,
 		is_basic_integer auto& remainder
 	) noexcept -> void {
-		auto n = numerator.bits();
-		assert(quotient.bits() >= n && "quotient should have enough space");
-		assert(remainder.bits() >= n && "remainder should have enough space");
+		auto m = numerator.bits();
+		auto n = denominator.size();
+        [[maybe_unused]] auto q = numerator.size() - n;
+		assert(quotient.size() >= q && "quotient should have enough space");
+		assert(remainder.size() >= n && "remainder should have enough space");
 
-		for (auto i = n; i > 0; --i) {
+		for (auto i = m; i > 0; --i) {
 			auto const idx = i - 1;
 			remainder.shift_left_mut(1, true);
 			
@@ -67,9 +73,159 @@ namespace dark::internal::integer {
 	}
 
 	// 2. Large-integer methods
-	// TODO: https://pure.mpg.de/rest/items/item_1819444_4/component/file_2599480/content
-	// Could be implemented to reduce division time complexity.
-		
+    // https://pure.mpg.de/rest/items/item_1819444_4/component/file_2599480/content
+	inline static constexpr auto recursive_div(
+		is_basic_integer auto const& numerator,
+		is_basic_integer auto const& denominator,
+		is_basic_integer auto& quotient,
+		is_basic_integer auto& remainder
+	) noexcept -> void {
+        auto m = numerator.size();
+        auto n = denominator.size();
+
+        if (numerator.abs_less(denominator)) {
+            remainder.clone_from(numerator); 
+            return;
+        }
+        auto D = denominator;
+        auto N = numerator;
+
+        // 1. find nearest power of 2^k
+        auto k = 1zu;
+
+        while (k * BIG_NUM_NAIVE_THRESHOLD < n) {
+            k <<= 1;
+        }
+
+        // 2a. set j = ceil(n/k)
+        auto j = (n + k - 1) / k;
+        // 2b. set n to k * j 
+        n = k * j;
+
+        // |xxxxxxxx|...........|
+        // |xxxxxxxx|--sigma---|
+        // |---------n----------|
+        // 3. find 2^sigma * B < base^n
+        auto sigma = (n - D.size());
+        sigma = std::max(sigma, 1zu) - 1;
+
+        // 4a. set D = D * 2^sigma
+        D.shift_by_base(sigma);
+
+        // 4b. set N = N * 2^sigma
+        N.shift_by_base(sigma);
+
+        // 5. t belongs to min { l >= 2 | len(A) < (l * n) / 2 }
+        auto t = 2zu;
+        while (N.size() >= (t * (n - 1))) {
+            t++;
+        }
+    
+        m = t * n;
+        
+        constexpr auto helper = []( auto&& fn,
+                                    auto const& N,
+                                    auto const& D,
+                                    auto& Q,
+                                    auto& R,
+                                    std::size_t n
+        ) -> void {
+            if (n <= BIG_NUM_NAIVE_THRESHOLD || (n & 1)) {
+                long_div(N, D, Q, R);
+                std::println("N: {:?}\n\nD: {:?}\n\nQ: {:?}\n\nR: {:?}", N, D, Q, R);
+                return;
+            }
+
+            auto const div_three_by_two = [fn](
+                auto const& N0,
+                auto const& N1,
+                auto const& N2,
+                auto const& D0,
+                auto const& D1,
+                auto& Q,
+                auto& R,
+                std::size_t n
+            ) {
+                auto N = N0;
+                N.merge_blocks(N1);
+                if ((N0.is_zero() && N1.is_zero() && N2.is_zero()) || (D0.is_zero())) {
+                    return;
+                }
+                auto r = R;
+                auto q = Q;
+                fn(fn, N, D0, q, r, n);
+
+
+                auto D = q * D1;
+                r.merge_blocks(N2);
+                r -= D;
+
+                auto B = D0;
+                B.merge_blocks(D1);
+
+                while (r.is_neg() && !q.is_zero()) {
+                    q -= 1;
+                    r += B;
+                }
+                std::copy(q.begin(), q.end(), Q.begin());
+                std::copy(r.begin(), r.end(), R.begin());
+            };
+
+            auto half = n >> 1;
+            auto n0 = N.to_borrowed(0 * half, half);
+            auto n1 = N.to_borrowed(1 * half, half);
+            auto n2 = N.to_borrowed(2 * half, half);
+            auto n3 = N.to_borrowed(3 * half);
+
+            auto d0 = D.to_borrowed(0, half);
+            auto d1 = D.to_borrowed(half);
+
+            auto q0 = Q.to_borrowed(0, half);
+            auto q1 = Q.to_borrowed(half);
+            
+            auto r = R;
+            div_three_by_two(n0, n1, n2, d0, d1, q0, r, half);
+
+            auto r0 = r.to_borrowed(0, half);
+            auto r1 = r.to_borrowed(half);
+
+            div_three_by_two(r0, r1, n3, d0, d1, q1, R, half);
+        };
+
+        quotient.dyn_arr().resize(m);
+        remainder.dyn_arr().resize(n);
+
+        // 7. Z_(t - 2) = [N_(t - 1), N_(t - 2)]
+        auto Z = quotient;
+        Z.dyn_arr().resize(2 * n);
+
+        std::copy_n(N.begin() + (t - 2) * n, 2 * n, Z.begin());
+
+        auto const body = [&](std::size_t i) {
+            auto idx = t - 2 - i;
+            auto Q = quotient.to_borrowed(idx * n, 2 * n);
+            auto R = remainder;
+            helper(helper, Z, D, Q, R, n);
+
+            if (idx > 0) {
+                std::copy_n(R.begin(), n, Z.begin());
+                std::copy_n(N.begin() + idx * n, n, Z.begin() + n);
+            } else {
+                remainder.transfer_ownership(R);
+            }
+        };
+
+        if (t == 2) {
+            body(0);
+            return;
+        }
+
+        for (auto i = 0zu; i < t - 2; ++i) {
+            body(i);
+        } 
+
+    }
+
 
 	// 3. Bidirectional Exact Integer Division
 	// https://core.ac.uk/download/pdf/82429412.pdf

@@ -2,10 +2,12 @@
 #define DARK_BIG_NUM_BASIC_INTEGER_HPP
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cassert>
 #include <concepts>
 #include <cstddef>
+#include <initializer_list>
 #include <limits>
 #include <ostream>
 #include <cstdint>
@@ -103,7 +105,6 @@ namespace dark::internal {
 
 		constexpr auto set_zero() noexcept -> void {
 			m_data.clear();
-			m_bits = 0;
 			m_flags = 0;
 		}
 
@@ -213,7 +214,7 @@ namespace dark::internal {
 			}
 			return 0;
 		}
-		constexpr size_type bits() const noexcept { return m_bits; }
+		constexpr size_type bits() const noexcept { return compute_used_bits(m_data); }
 		constexpr size_type bytes() const noexcept { return bits() / 8; }
 		constexpr pointer data() noexcept { return m_data.data(); }
 		constexpr const_pointer data() const noexcept { return m_data.data(); }
@@ -451,15 +452,11 @@ namespace dark::internal {
 		friend void swap(BasicInteger& lhs, BasicInteger& rhs) noexcept {
 			using std::swap;
 			swap(lhs.m_data, rhs.m_data);
-			swap(lhs.m_bits, rhs.m_bits);
 			swap(lhs.m_flags, rhs.m_flags);
 		}
 		
 		constexpr auto is_zero() const noexcept -> bool {
-			if (size() == 0) return true;
-			if (size() == 1) return m_data[0] == 0;
-			
-			return false;
+			return bits() == 0;
 		}
 
 		constexpr auto is_one() const noexcept -> bool {
@@ -511,12 +508,9 @@ namespace dark::internal {
 
 			if (m_data.empty()) {
 				set_is_neg(false);
-				m_bits = 0;
 				m_flags = 0;
 				return i;
 			}
-			auto bits = static_cast<std::size_t>(std::bit_width(m_data.back()));
-			m_bits = (size() - 1) * BlockInfo::block_total_bits + bits;
             return i;
 		}
 
@@ -528,9 +522,6 @@ namespace dark::internal {
 
             pop_front(i);
             if (m_data.empty()) return i;
-
-			auto bits = static_cast<std::size_t>(std::bit_width(m_data.back()));
-			m_bits = (size() - 1) * BlockInfo::block_total_bits + bits;
             return i;
 		}
 
@@ -542,7 +533,6 @@ namespace dark::internal {
                 resize(size() - n);
             }
             if (m_data.empty()) {
-                m_bits = 0;
                 m_flags = 0;
             }
         }
@@ -557,7 +547,6 @@ namespace dark::internal {
 			if (pow == 0) {
 				m_data.clear();
 				m_data.push_back(1);
-				m_bits = 1;
 				m_flags = 0;
 				return *this;
 			}
@@ -568,7 +557,6 @@ namespace dark::internal {
 		constexpr auto to_borrowed(size_type start, size_type size = base_type::npos) const noexcept -> BasicInteger {
 			auto temp = BasicInteger{};
 			temp.m_data = m_data.to_borrowed(start, size);
-			temp.m_bits = compute_used_bits(temp.m_data);
 			temp.m_flags = m_flags;
 			return temp;
 		}
@@ -585,9 +573,13 @@ namespace dark::internal {
 			} else {
 				m_data = std::move(other.m_data);
 			}
-			m_bits = other.m_bits;
 			m_flags = other.m_flags;
 		}
+
+        constexpr auto clone_from(BasicInteger const& other) -> void {
+            dyn_arr().clone_from(other.dyn_arr());
+			m_flags = other.m_flags;
+        }
 
 		constexpr auto shift_by_base(size_type pow) -> BasicInteger& {
 			auto const sz = size();
@@ -610,11 +602,26 @@ namespace dark::internal {
         }
 
 		constexpr auto abs_less(BasicInteger const& other) const noexcept -> bool {
-			if (bits() < other.bits()) return true;
-			else if (bits() > other.bits()) return false;
+            auto lb = bits();
+            auto rb = other.bits();
+			if (lb < rb) return true;
+			else if (lb > rb) return false;
 			return compare(*this, other, std::less<>{});
 		} 
 
+        template <typename... Ts>
+        constexpr auto merge_blocks(Ts const&... args) -> BasicInteger& {
+            auto old_size = size();
+            resize(size() + (args.size() + ...));
+            std::array<BasicInteger const*, sizeof...(Ts)> temp = {&args...};
+            auto start = begin() + old_size;
+            for (auto i = 0zu; i < temp.size(); ++i) {
+                auto& el = *temp[i];
+                std::copy(el.begin(), el.end(), start);
+                start += el.size();
+            }
+            return *this;
+        }
 	private:
 		static constexpr auto shift_left_helper(
 			BasicInteger& out,
@@ -655,7 +662,6 @@ namespace dark::internal {
 			auto res = BasicInteger{};
 			res.m_data.reserve(size() * pow);
 			res.m_data.push_back(1);
-			res.m_bits = 1;
 			auto& self = *this;
 			while (pow) {
 				if (pow & 1) res.mul_mut(self);
@@ -677,8 +683,6 @@ namespace dark::internal {
 
 			auto size_required = std::max(a.size(), b.size()) + 1;
 			res.resize(size_required, 0);
-			res.m_bits = std::max(a.bits(), b.bits());
-
 			res.set_is_neg(a.is_neg());
 			
 			std::copy(a.begin(), a.end(), res.begin());
@@ -722,8 +726,7 @@ namespace dark::internal {
 
 			auto size_required = std::max(a.size(), b.size()) + 1;
 			res.resize(size_required, 0);
-			res.m_bits = std::max(a.bits(), b.bits());
-			
+
 			std::copy(lhs->begin(), lhs->end(), res.begin());
 			auto borrow = integer::safe_sub_helper(res.m_data, res.m_data, *rhs);
 
@@ -781,8 +784,6 @@ namespace dark::internal {
 				auto const msz = std::max(3zu, num.size());
 				quot.resize(msz, 0);
 				rem.resize(msz, 0);
-				quot.m_bits = num.bits();
-				rem.m_bits = num.bits();
 
 				auto scope = utils::TempAllocatorScope();
 				if (!integer::fast_div(num, den, quot, rem)) {
@@ -958,7 +959,6 @@ namespace dark::internal {
 
 	private:
 		base_type		m_data{};
-		size_type		m_bits{};
 		std::uint8_t	m_flags{};
 	};
 

@@ -57,8 +57,10 @@ constexpr auto operator==(L const& lhs, R const& rhs) noexcept -> bool {
 	using rhs_t = std::decay_t<R>;
 
 	if constexpr (is_basic_integer<L> && is_basic_integer<R>) {
+        auto const lb = lhs.bits();
+        auto const rb = rhs.bits();
 		if (rhs.is_neg() != lhs.is_neg()) return false;
-		if (rhs.bits() != lhs.bits()) return false;
+		if (rb != lb) return false;
 		return std::equal(lhs.begin(), lhs.end(), rhs.begin());
 	} else if constexpr (is_basic_integer<L> && !is_basic_integer<R>) {
 		auto r = lhs_t(rhs);
@@ -83,9 +85,11 @@ constexpr auto operator<(L const& lhs, R const& rhs) noexcept -> bool {
 	using rhs_t = std::decay_t<R>;
 
 	if constexpr (is_basic_integer<L> && is_basic_integer<R>) {
+        auto const lb = lhs.bits();
+        auto const rb = rhs.bits();
 		if (lhs.is_neg() && !rhs.is_neg()) return true;
-		else if (lhs.bits() < rhs.bits()) return true;
-		else if (lhs.bits() > rhs.bits()) return false;
+		else if (lb < rb) return true;
+		else if (lb > rb) return false;
 		return compare(lhs, rhs, std::less_equal<>{});
 	} else if constexpr (is_basic_integer<L> && !is_basic_integer<R>) {
 		auto r = lhs_t(rhs);
@@ -104,9 +108,11 @@ constexpr auto operator<=(L const& lhs, R const& rhs) noexcept -> bool {
 	using rhs_t = std::decay_t<R>;
 
 	if constexpr (is_basic_integer<L> && is_basic_integer<R>) {
+        auto const lb = lhs.bits();
+        auto const rb = rhs.bits();
 		if (lhs.is_neg() && !rhs.is_neg()) return true;
-		else if (lhs.bits() < rhs.bits()) return true;
-		else if (lhs.bits() > rhs.bits()) return false;
+		else if (lb < rb) return true;
+		else if (lb > rb) return false;
 		return compare(lhs, rhs, std::less_equal<>{});
 	} else if constexpr (is_basic_integer<L> && !is_basic_integer<R>) {
 		auto r = lhs_t(rhs);
@@ -125,9 +131,11 @@ constexpr auto operator>(L const& lhs, R const& rhs) noexcept -> bool {
 	using rhs_t = std::decay_t<R>;
 
 	if constexpr (is_basic_integer<L> && is_basic_integer<R>) {
+        auto const lb = lhs.bits();
+        auto const rb = rhs.bits();
 		if (!lhs.is_neg() && rhs.is_neg()) return true;
-		else if (lhs.bits() > rhs.bits()) return true;
-		else if (lhs.bits() < rhs.bits()) return false;
+		else if (lb > rb) return true;
+		else if (lb < rb) return false;
 		return compare(lhs, rhs, std::greater<>{});
 	} else if constexpr (is_basic_integer<L> && !is_basic_integer<R>) {
 		auto r = lhs_t(rhs);
@@ -146,9 +154,11 @@ constexpr auto operator>=(L const& lhs, R const& rhs) noexcept -> bool {
 	using rhs_t = std::decay_t<R>;
 
 	if constexpr (is_basic_integer<L> && is_basic_integer<R>) {
+        auto const lb = lhs.bits();
+        auto const rb = rhs.bits();
 		if (!lhs.is_neg() && rhs.is_neg()) return true;
-		else if (lhs.bits() > rhs.bits()) return true;
-		else if (lhs.bits() < rhs.bits()) return false;
+		else if (lb > rb) return true;
+		else if (lb < rb) return false;
 		return compare(lhs, rhs, std::greater_equal<>{});
 	} else if constexpr (is_basic_integer<L> && !is_basic_integer<R>) {
 		auto r = lhs_t(rhs);
