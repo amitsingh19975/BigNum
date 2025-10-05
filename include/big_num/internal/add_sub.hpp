@@ -9,6 +9,86 @@
 #include <type_traits>
 
 namespace big_num::internal {
+    template <std::size_t Bits = MachineConfig::bits, std::integral T>
+        requires std::is_unsigned_v<T>
+    inline static constexpr auto abs_add(
+        T lhs,
+        T rhs
+    ) noexcept -> std::pair<T /*val*/, T /*carry*/> {
+        if constexpr (Bits == sizeof(T) * 8) {
+            return ui::addc(lhs, rhs);
+        } else {
+            using acc_t = accumulator_t<T>;
+            static constexpr auto mask = (acc_t{1} << Bits) - 1;
+            auto res = acc_t{lhs} + acc_t{rhs};
+            return {
+                static_cast<T>(res & mask),
+                static_cast<T>(res >> Bits)
+            };
+        }
+    }
+
+    template <std::size_t Bits = MachineConfig::bits, std::integral T>
+        requires std::is_unsigned_v<T>
+    inline static constexpr auto abs_add(
+        T lhs,
+        T rhs,
+        T carry
+    ) noexcept -> std::pair<T /*val*/, T /*carry*/> {
+        if constexpr (Bits == sizeof(T) * 8) {
+            return ui::addc(lhs, rhs, carry);
+        } else {
+            using acc_t = accumulator_t<T>;
+            static constexpr auto mask = (acc_t{1} << Bits) - 1;
+            auto res = acc_t{lhs} + acc_t{rhs} + acc_t{carry};
+            return {
+                static_cast<T>(res & mask),
+                static_cast<T>(res >> Bits)
+            };
+        }
+    }
+
+    template <std::size_t Bits = MachineConfig::bits, std::integral T>
+        requires std::is_unsigned_v<T>
+    inline static constexpr auto abs_sub(
+        T lhs,
+        T rhs
+    ) noexcept -> std::pair<T /*val*/, T /*carry*/> {
+        if constexpr (Bits == sizeof(T) * 8) {
+            return ui::subc(lhs, rhs);
+        } else {
+            using acc_t = accumulator_t<T>;
+            static constexpr auto mask = (acc_t{1} << Bits) - 1;
+            auto res = acc_t{lhs} - acc_t{rhs};
+            return {
+                static_cast<T>(res & mask),
+                static_cast<T>(lhs < rhs)
+            };
+        }
+    }
+
+    template <std::size_t Bits = MachineConfig::bits, std::integral T>
+        requires std::is_unsigned_v<T>
+    inline static constexpr auto abs_sub(
+        T lhs,
+        T rhs,
+        T carry
+    ) noexcept -> std::pair<T /*val*/, T /*carry*/> {
+        if constexpr (Bits == sizeof(T) * 8) {
+            return ui::subc(lhs, rhs, carry);
+        } else {
+            using acc_t = accumulator_t<T>;
+            static constexpr auto mask = (acc_t{1} << Bits) - 1;
+
+            auto r = acc_t{rhs} + acc_t{carry};
+            auto res = acc_t{lhs} - r;
+            return {
+                static_cast<T>(res & mask),
+                static_cast<T>(lhs < rhs)
+            };
+        }
+    }
+
     inline static constexpr auto abs_add(
         std::span<Integer::value_type>       lhs,
         std::span<Integer::value_type const> rhs
@@ -20,41 +100,42 @@ namespace big_num::internal {
         auto osz = lhs.size();
         auto bsz = std::min(rhs.size(), osz);
 
+        using val_t = Integer::value_type;
         using simd_t = MachineConfig::simd_uint_t;
         static constexpr auto N = simd_t::elements;
-        using sacc_t = MachineConfig::simd_acc_t;
-        using acc_t = MachineConfig::acc_t;
 
-        auto c = sacc_t::zeroed();
+        auto carry = val_t{};
 
         auto i = std::size_t{};
-        if (!std::is_constant_evaluated()) {
-            auto nsz = bsz - bsz % N;
-            for (; i < nsz; i += N) {
-                auto l = ui::cast<acc_t>(simd_t::load(o + i, N));
-                auto r = ui::cast<acc_t>(simd_t::load(b + i, N));
-                auto [q, tc] = ui::addc<MachineConfig::bits>(l, r, c);
-                std::copy_n(q.data(), N, o + i);
-                c[0] = tc;
+        if constexpr (MachineConfig::bits < sizeof(val_t) * 8) {
+            if (!std::is_constant_evaluated()) {
+                auto c = simd_t::zeroed();
+                auto nsz = bsz - bsz % N;
+                for (; i < nsz; i += N) {
+                    auto l = simd_t::load(o + i, N);
+                    auto r = simd_t::load(b + i, N);
+                    auto [q, tc] = ui::masked_addc<MachineConfig::bits>(l, r, c);
+                    std::copy_n(q.data(), N, o + i);
+                    c[0] = tc;
+                }
+                carry = static_cast<val_t>(c[0]);
             }
         }
 
-        auto carry = c[0];
         for (; i < bsz; ++i) {
-            auto l = static_cast<acc_t>(o[i]);
-            auto r = static_cast<acc_t>(b[i]);
-            auto q = l + r + carry;
-            o[i] = static_cast<MachineConfig::uint_t>(q & MachineConfig::mask);
-            carry = q >> MachineConfig::bits;
+            auto l = o[i];
+            auto r = b[i];
+            auto [v, c] = abs_add(l, r, carry);
+            o[i] = v;
+            carry = c;
         }
 
         auto sz = osz;
         while (i < sz && carry) {
-            auto l = static_cast<acc_t>(o[i]);
-            auto r = carry;
-            auto q = l + r;
-            o[i] = static_cast<MachineConfig::uint_t>(q & MachineConfig::mask);
-            carry = q >> MachineConfig::bits;
+            auto l = o[i];
+            auto [v, c] = abs_add(l, carry);
+            o[i] = v;
+            carry = c;
         }
     }
 
@@ -82,7 +163,6 @@ namespace big_num::internal {
     ) -> void {
         auto const bits = std::max(lhs.bits(), rhs.bits());
         out.resize(bits + 1);
-        out.fill(0);
 
         auto o = out.to_span();
         auto a = lhs.to_span();
@@ -111,45 +191,39 @@ namespace big_num::internal {
         auto osz = lhs.size();
         auto bsz = rhs.size();
 
+        using val_t = Integer::value_type;
         using simd_t = MachineConfig::simd_uint_t;
         static constexpr auto N = simd_t::elements;
-        using sacc_t = MachineConfig::simd_acc_t;
-        using acc_t = MachineConfig::acc_t;
 
-        auto c = sacc_t::zeroed();
+        auto carry = val_t{};
 
         auto i = std::size_t{};
-        if (!std::is_constant_evaluated()) {
-            auto nsz = bsz - bsz % N;
-            for (; i < nsz; i += N) {
-                auto l = ui::cast<acc_t>(simd_t::load(o + i, N));
-                auto r = ui::cast<acc_t>(simd_t::load(b + i, N)) + c;
-                auto [q, tc] = ui::subc<MachineConfig::bits>(l, r, c);
-                std::copy_n(q.data(), N, o + i);
-                c[0] = tc;
+        if constexpr (MachineConfig::bits < sizeof(val_t) * 8) {
+            if (!std::is_constant_evaluated()) {
+                auto c = simd_t::zeroed();
+                auto nsz = bsz - bsz % N;
+                for (; i < nsz; i += N) {
+                    auto l = simd_t::load(o + i, N);
+                    auto r = simd_t::load(b + i, N) + c;
+                    auto [q, tc] = ui::masked_subc<MachineConfig::bits>(l, r, c);
+                    std::copy_n(q.data(), N, o + i);
+                    c[0] = tc;
+                }
+                carry = static_cast<val_t>(c[0]);
             }
         }
 
-        auto carry = c[0];
-        auto helper = [&carry, &i, o](acc_t l, acc_t r) {
-            auto is_small = l < r;
-            auto q = l - r;
-            o[i] = static_cast<MachineConfig::uint_t>(q & MachineConfig::mask);
-            carry = is_small;
-        };
-
         for (; i < bsz; ++i) {
-            auto l = static_cast<acc_t>(o[i]);
-            auto r = static_cast<acc_t>(b[i]) + carry;
-            helper(l, r);
+            auto [v, c] = abs_sub(o[i], b[i], carry);
+            o[i] = v;
+            carry = c;
         }
 
         auto sz = osz;
         while (carry && i < sz) {
-            auto l = static_cast<acc_t>(o[i]);
-            auto r = carry;
-            helper(l, r);
-            ++i;
+            auto [v, c] = abs_sub(o[i], carry);
+            o[i++] = v;
+            carry = c;
         }
         return carry;
     }
@@ -190,7 +264,6 @@ namespace big_num::internal {
     ) -> void {
         auto const bits = std::max(lhs.bits(), rhs.bits());
         out.resize(bits + 1);
-        out.fill(0);
 
         auto a = lhs.to_span();
         auto b = rhs.to_span();
@@ -246,6 +319,36 @@ namespace big_num::internal {
         } else {
             abs_add(out, lhs, rhs);
         }
+    }
+
+    inline static constexpr auto inc(
+        std::span<Integer::value_type> lhs,
+        Integer::value_type val = 1
+    ) -> Integer::value_type {
+        Integer::value_type c{val};
+        auto i = 0zu;
+        while (i < lhs.size() && c){
+            auto r = lhs[i] + c;
+            auto q = r & MachineConfig::mask;
+            c = r >> MachineConfig::bits;
+            lhs[i++] = static_cast<Integer::value_type>(q);
+        }
+        return c;
+    }
+
+    inline static constexpr auto dec(
+        std::span<Integer::value_type> lhs,
+        Integer::value_type val = 1
+    ) -> Integer::value_type {
+        Integer::value_type c{val};
+        auto i = 0zu;
+        while (i < lhs.size() && c){
+            auto r = lhs[i] - c;
+            c = lhs[i] < c;
+            auto q = r & MachineConfig::mask;
+            lhs[i++] = static_cast<Integer::value_type>(q);
+        }
+        return c;
     }
 } // namespace big_num::internal
 

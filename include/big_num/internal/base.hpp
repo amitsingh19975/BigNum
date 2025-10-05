@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include "ui.hpp"
+#include "ui/features.hpp"
 
 namespace big_num::internal {
 
@@ -32,6 +33,10 @@ namespace big_num::internal {
 
         static constexpr acc_t max = acc_t{1} << bits;
         static constexpr acc_t mask = max - 1;
+
+        static constexpr auto is_full_width() noexcept -> bool {
+            return total_bits == bits;
+        }
 
         static constexpr auto size(std::size_t b) noexcept -> std::size_t {
             return (b + bits - 1) / bits;
@@ -83,6 +88,40 @@ namespace big_num::internal {
         #endif
     };
 
+
+    namespace detail {
+        template <typename T>
+        struct AccumulatorType {
+            using type = T;
+        };
+
+        template <>
+        struct AccumulatorType<std::uint8_t> {
+            using type = std::uint16_t;
+        };
+
+        template <>
+        struct AccumulatorType<std::uint16_t> {
+            using type = std::uint32_t;
+        };
+
+        template <>
+        struct AccumulatorType<std::uint32_t> {
+            using type = std::uint64_t;
+        };
+
+        template <>
+        struct AccumulatorType<std::uint64_t> {
+            #ifdef UI_HAS_INT128
+                using type = ui::uint128_t;
+            #else
+                using type = std::uint64_t;
+            #endif
+        };
+    } // namespace detail
+
+    template <typename T>
+    using accumulator_t = detail::AccumulatorType<T>::type;
 } // big_num::internal
 
 #endif // AMT_BIG_NUM_INTERNAL_BASE_HPP

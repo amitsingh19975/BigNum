@@ -60,7 +60,7 @@ namespace big_num::internal {
         }
 
         constexpr auto set_bits(size_type bits) noexcept -> void {
-            _bits = bits | (value_type{is_neg()} * last_bit_shift);
+            _bits = bits | (size_type{is_neg()} << last_bit_shift);
         }
 
 
@@ -144,9 +144,9 @@ namespace big_num::internal {
             if (!is_small()) {
                 allocator().deallocate(old_ptr, MachineConfig::size(_cap_bits));
             }
-            set_bits(bits);
-            _cap_bits = new_chunks * MachineConfig::bits;
             _data = { .ptr = ptr };
+            _cap_bits = new_chunks * MachineConfig::bits;
+            set_bits(bits);
         }
 
         constexpr auto shrink_to_fit() -> void {
@@ -166,7 +166,8 @@ namespace big_num::internal {
                 std::copy(ptr, ptr + size(), _data.data);
             } else {
                 auto np = allocator().allocate(new_chunks);
-                std::copy(ptr, ptr + size(), np);
+                auto sz = MachineConfig::size(bits_);
+                std::copy(ptr, ptr + sz, np);
                 _data = { .ptr = np };
             }
 

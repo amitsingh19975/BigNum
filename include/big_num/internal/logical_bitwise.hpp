@@ -1,10 +1,10 @@
 #ifndef AMT_BIG_NUM_INTERNAL_LOGICAL_BITWISE_HPP
 #define AMT_BIG_NUM_INTERNAL_LOGICAL_BITWISE_HPP
 
-#include "big_num/internal/base.hpp"
-#include "big_num/internal/integer_parse.hpp"
+#include "base.hpp"
+#include "integer_parse.hpp"
 #include "integer.hpp"
-#include "ui/arch/arm/shift.hpp"
+#include "ui.hpp"
 #include <cstddef>
 #include <type_traits>
 
@@ -247,6 +247,34 @@ namespace big_num::internal {
         return out;
     }
 
+    template <std::size_t Count>
+    inline static constexpr auto shift_right(
+        std::span<Integer::value_type> out,
+        std::span<Integer::value_type const> in
+    ) noexcept -> void {
+        if (in.empty()) return;
+
+        static constexpr auto blocks = Count / MachineConfig::bits;
+        static constexpr auto rem = Count % MachineConfig::bits;
+        if (blocks >= out.size()) return;
+
+        if constexpr (rem == 0) {
+            detail::move_blocks_right<blocks>(out);
+            return;
+        }
+
+        static constexpr auto mask = (MachineConfig::uint_t{1} << rem) - 1;
+
+        for (auto i = 0zu; i < out.size() - 1; ++i) {
+            auto c = out[i];
+            auto n = out[i + 1];
+            auto r = c >> rem;
+            auto m = ((n & mask) << (MachineConfig::bits - rem));
+            out[i] = r | m;
+        }
+        out.back() >>= rem;
+    }
+
     inline static constexpr auto shift_right(
         std::span<Integer::value_type> out,
         std::size_t count
@@ -295,7 +323,43 @@ namespace big_num::internal {
         return out;
     }
 
-    template <std::size_t Count, bool DeferTrim = false>
+    inline static constexpr auto shift_right(
+        std::span<Integer::value_type> out,
+        std::span<Integer::value_type const> in,
+        std::size_t count
+    ) noexcept -> void {
+        if (in.empty()) return;
+
+        // [a, b, c, d] => [b, c, d]
+        auto const blocks = count / MachineConfig::bits;
+        if (blocks >= in.size()) {
+            std::fill(out.begin(), out.end(), 0);
+            return;
+        }
+
+        auto const rem = count % MachineConfig::bits;
+        if (rem == 0) {
+            std::copy_n(
+                in.begin() + static_cast<std::ptrdiff_t>(blocks),
+                out.size() - blocks,
+                out.begin()
+            );
+            return;
+        }
+
+        auto const mask = (MachineConfig::uint_t{1} << rem) - 1;
+
+        for (auto i = 0zu; i < out.size() - 1; ++i) {
+            auto c = out[i];
+            auto n = out[i + 1];
+            auto r = c >> rem;
+            auto m = ((n & mask) << (MachineConfig::bits - rem));
+            out[i] = r | m;
+        }
+        out.back() >>= rem;
+    }
+
+    template <std::size_t Count>
     inline static constexpr auto shift_right(
         Integer& out
     ) noexcept -> void {
@@ -305,12 +369,24 @@ namespace big_num::internal {
         }
         auto t = shift_right<Count>(out.to_span());
         out.resize(t.size() * MachineConfig::bits);
-        if constexpr (!DeferTrim) {
-            remove_trailing_zeros(out);
-        }
+        remove_trailing_zeros(out);
     }
 
-    template <bool DeferTrim = false>
+    template <std::size_t Count>
+    inline static constexpr auto shift_right(
+        Integer& out,
+        Integer const& in
+    ) noexcept -> void {
+        auto const bits = in.bits();
+        if (bits <= Count) {
+            out.resize(0);
+            return;
+        }
+        out.resize(bits);
+        shift_right<Count>(out.to_span(), in.to_span());
+        remove_trailing_zeros(out);
+    }
+
     inline static constexpr auto shift_right(
         Integer& out,
         std::size_t count
@@ -321,26 +397,43 @@ namespace big_num::internal {
         }
         auto t = shift_right(out.to_span(), count);
         out.resize(t.size() * MachineConfig::bits);
-        if constexpr (!DeferTrim) {
-            remove_trailing_zeros(out);
+        remove_trailing_zeros(out);
+    }
+
+    inline static constexpr auto shift_right(
+        Integer& out,
+        Integer const& in,
+        std::size_t count
+    ) noexcept -> void {
+        auto const bits = in.bits();
+        if (bits <= count) {
+            out.resize(0);
+            return;
         }
+        out.resize(bits);
+        shift_right(out.to_span(), in.to_span(), count);
+        remove_trailing_zeros(out);
     }
 
     template <std::size_t Count>
     inline static constexpr auto shift_left(
         std::span<Integer::value_type> out
-    ) noexcept -> void {
-        if (out.empty()) return;
+    ) noexcept -> Integer::value_type {
+        if (out.empty()) return {};
         // [a, b, c, d] => [0, a, b, c, d]
 
         static constexpr auto blocks = Count / MachineConfig::bits;
-        if (blocks >= out.size()) return;
+        if (blocks >= out.size()) return {};
         std::copy(out.rbegin() + static_cast<std::ptrdiff_t>(blocks), out.rend(), out.rbegin());
         std::fill_n(out.begin(), blocks, 0);
 
         static constexpr auto rem = Count % MachineConfig::bits;
+        if constexpr (rem == 0) return {};
+
         auto i = std::size_t{blocks};
         auto c = MachineConfig::uint_t{};
+
+        auto mbits = out.back() >> rem;
 
         if (!std::is_constant_evaluated()) {
             using simd_t = MachineConfig::simd_uint_t; 
@@ -353,7 +446,7 @@ namespace big_num::internal {
                 auto const mask = simd_t::load(MachineConfig::mask);
                 auto p = ui::shift_right_lane<1>(simd_t::load(out.data() + i, N));
 
-                for (; i < sz; i += N) {
+                for (; i < sz - N; i += N) {
                     auto n = simd_t::load(out.data() + i, N);
                     auto np = simd_t::load(out.data() + i + N - 1, N);
 
@@ -373,25 +466,59 @@ namespace big_num::internal {
             c = (e >> (MachineConfig::bits - rem));
             out[i] = static_cast<MachineConfig::uint_t>(r);
         }
+
+        return mbits;
+    }
+
+    template <std::size_t Count>
+    inline static constexpr auto shift_left(
+        std::span<Integer::value_type> out,
+        std::span<Integer::value_type const> in
+    ) noexcept -> Integer::value_type {
+        if (in.empty()) return {};
+        // [a, b, c, d] => [0, a, b, c, d]
+
+        static constexpr auto blocks = Count / MachineConfig::bits;
+        if (blocks >= in.size()) return {};
+        std::fill_n(out.begin(), blocks, 0);
+
+        static constexpr auto rem = Count % MachineConfig::bits;
+        if constexpr (rem == 0) {
+            std::copy_n(in.begin(), in.size() - blocks, out.begin() + blocks);
+            return {};
+        }
+
+        auto c = MachineConfig::uint_t{};
+
+        for (auto i = blocks; i < out.size(); ++i) {
+            auto e = out[i];
+            auto r = ((e << rem) | c) & MachineConfig::mask;
+            c = (e >> (MachineConfig::bits - rem));
+            out[i] = static_cast<MachineConfig::uint_t>(r);
+        }
+
+        return in.back() >> rem;
     }
 
     inline static constexpr auto shift_left(
         std::span<Integer::value_type> out,
         std::size_t count
-    ) noexcept -> void {
-        if (out.empty()) return;
+    ) noexcept -> Integer::value_type {
+        if (out.empty()) return {};
         // [a, b, c, d] => [0, a, b, c, d]
 
         auto const blocks = count / MachineConfig::bits;
-        if (blocks >= out.size()) return;
+        if (blocks >= out.size()) return {};
         std::copy(out.rbegin() + static_cast<std::ptrdiff_t>(blocks), out.rend(), out.rbegin());
         std::fill_n(out.begin(), blocks, 0);
 
         auto const rem = count % MachineConfig::bits;
-        if (rem == 0) return;
+        if (rem == 0) return {};
 
         auto i = std::size_t{blocks};
         auto c = MachineConfig::uint_t{};
+
+        auto mbits = out.back() >> rem;
 
         if (!std::is_constant_evaluated()) {
             using simd_t = MachineConfig::simd_uint_t; 
@@ -423,24 +550,78 @@ namespace big_num::internal {
             c = (e >> (MachineConfig::bits - rem));
             out[i] = static_cast<MachineConfig::uint_t>(r);
         }
+
+        return mbits;
+    }
+
+    inline static constexpr auto shift_left(
+        std::span<Integer::value_type> out,
+        std::span<Integer::value_type const> in,
+        std::size_t count
+    ) noexcept -> Integer::value_type {
+        if (in.empty()) return {};
+        // [a, b, c, d] => [0, a, b, c, d]
+
+        auto const blocks = count / MachineConfig::bits;
+        if (blocks >= in.size()) return {};
+        
+        std::fill_n(out.begin(), blocks, 0);
+
+        auto const rem = count % MachineConfig::bits;
+        if (rem == 0) {
+            std::copy_n(
+                in.begin(),
+                in.size() - blocks,
+                out.begin() + static_cast<std::ptrdiff_t>(blocks)
+            );
+            return {};
+        }
+
+        auto c = Integer::value_type{};
+        for (auto i = blocks; i < in.size(); ++i) {
+            auto e = in[i];
+            auto r = ((e << rem) | c) & MachineConfig::mask;
+            c = (e >> (MachineConfig::bits - rem));
+            out[i] = static_cast<MachineConfig::uint_t>(r);
+        }
+
+        return in.back() >> rem;
+    }
+
+    template <bool FixedSize = false>
+    inline static constexpr auto shift_left(
+        Integer& out,
+        std::size_t count
+    ) -> Integer::value_type {
+        if constexpr (!FixedSize) {
+            out.resize(out.bits() + count);
+        }
+        auto mbits = shift_left(out.to_span(), count);
+        remove_trailing_zeros(out);
+        return mbits;
     }
 
     inline static constexpr auto shift_left(
         Integer& out,
+        Integer const& in,
         std::size_t count
-    ) -> void {
-        out.resize(out.bits() + count);
-        shift_left(out.to_span(), count);
+    ) -> Integer::value_type {
+        out.resize(in.bits() + count);
+        auto mbits = shift_left(out.to_span(), in.to_span(), count);
         remove_trailing_zeros(out);
+        return mbits;
     }
 
-    template <std::size_t Count>
+    template <std::size_t Count, bool FixedSize = false>
     inline static constexpr auto shift_left(
         Integer& out
-    ) -> void {
-        out.resize(out.bits() + Count);
-        shift_left<Count>(out.to_span());
+    ) -> Integer::value_type {
+        if constexpr (!FixedSize) {
+            out.resize(out.bits() + Count);
+        }
+        auto mbits = shift_left<Count>(out.to_span());
         remove_trailing_zeros(out);
+        return mbits;
     }
 
     inline static constexpr auto set_integer_bit(
@@ -472,6 +653,99 @@ namespace big_num::internal {
         auto index = pos % MachineConfig::bits;
         if (out.size() <= block) return {};
         return static_cast<bool>(out[block] & (Integer::value_type{1} << index));
+    }
+
+    inline static constexpr auto ones_complement(
+        std::span<Integer::value_type> out,
+        std::span<Integer::value_type const> in
+    ) noexcept -> void {
+        if (in.empty()) return;
+
+        auto i = std::size_t{};
+
+        assert(out.size() == in.size());
+        auto size = in.size();
+
+        if (!std::is_constant_evaluated()) {
+            using simd_t = MachineConfig::simd_uint_t; 
+            static constexpr auto N = simd_t::elements;
+            auto mask = simd_t::load(MachineConfig::mask);
+
+            auto sz = size - size % N;
+
+            for (; i < sz; i += N) {
+                auto v = simd_t::load(in.data() + i, N);
+                v = ui::bitwise_not(v) & mask;
+                v.store(out.data() + i, N);
+            }
+        }
+
+        for (; i < size; ++i) {
+            auto v = in[i];
+            out[i] = (~v) & MachineConfig::mask;
+        }
+    }
+
+    inline static constexpr auto ones_complement(
+        std::span<Integer::value_type> out
+    ) noexcept -> void {
+        ones_complement(out, out);
+    }
+
+    inline static constexpr auto twos_complement(
+        std::span<Integer::value_type> out,
+        std::span<Integer::value_type const> in
+    ) noexcept -> void {
+        if (in.empty()) return;
+
+        auto size = in.size();
+
+        auto c = Integer::acc_t{1};
+
+        for (auto i = 0zu; i < size; ++i) {
+            auto r = (~in[i]) & MachineConfig::mask;
+            auto s = r + c;
+            out[i] = s & MachineConfig::mask;
+            c = (s >> MachineConfig::bits);
+        }
+    }
+
+    inline static constexpr auto twos_complement(
+        std::span<Integer::value_type> out
+    ) noexcept -> void {
+        twos_complement(out, out);
+    }
+
+    inline static constexpr auto ones_complement(
+        Integer& out
+    ) noexcept -> void {
+        ones_complement(out.to_span());
+        remove_trailing_zeros(out);
+    }
+
+    inline static constexpr auto ones_complement(
+        Integer& out,
+        Integer const& in
+    ) noexcept -> void {
+        out.resize(in.bits());
+        ones_complement(out.to_span(), in.to_span());
+        remove_trailing_zeros(out);
+    }
+
+    inline static constexpr auto twos_complement(
+        Integer& out
+    ) noexcept -> void {
+        twos_complement(out.to_span());
+        remove_trailing_zeros(out);
+    }
+
+    inline static constexpr auto twos_complement(
+        Integer& out,
+        Integer const& in
+    ) noexcept -> void {
+        out.resize(in.bits());
+        twos_complement(out.to_span(), in.to_span());
+        remove_trailing_zeros(out);
     }
 } // namespace big_num::internal
 
