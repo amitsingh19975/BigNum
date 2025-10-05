@@ -531,7 +531,7 @@ namespace big_num::internal {
                 auto const mask = simd_t::load(MachineConfig::mask);
                 auto p = ui::shift_right_lane<1>(simd_t::load(out.data() + i, N));
 
-                for (; i < sz; i += N) {
+                for (; i < sz - N; i += N) {
                     auto n = simd_t::load(out.data() + i, N);
                     auto np = simd_t::load(out.data() + i + N - 1, N);
 
