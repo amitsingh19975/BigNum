@@ -197,40 +197,40 @@ namespace big_num::internal {
         }
 
         // using uint_t = MachineConfig::uint_t;
-        using simd_t = MachineConfig::simd_uint_t; 
-        static constexpr auto N = simd_t::elements;
-
         auto a = lhs.data();
         auto b = rhs.data();
         auto asz = lhs.size();
-        auto sz = MachineConfig::align_up<N>(asz);
 
         // lhs < rhs
         // -lhs < -rhs => lhs > rhs
         auto i = std::size_t{};
-        if (!std::is_constant_evaluated()) {
-            auto nsz = sz - sz % N;
-            for (; i < nsz; i += N) {
-                auto l = simd_t::load(a + i, N);
-                auto r = simd_t::load(b + i, N);
-                auto mask = ui::IntMask(ui::rcast<std::uint8_t>(l == r));
-                if (mask.all()) continue;
-                for (auto k = 0ul; k < N; ++k) {
-                    auto tl = a[i + k];
-                    auto tr = b[i + k];
-                    if (tl == tr) continue;
-                    if (lhs.is_neg()) return tl > tr;
-                    else return tl < tr;
-                }
-            }
-        }
+
+        // TODO: Fix this simd cmp
+        // if (!std::is_constant_evaluated()) {
+        //     using simd_t = MachineConfig::simd_uint_t; 
+        //     static constexpr auto N = simd_t::elements;
+        //     auto sz = MachineConfig::align_up<N>(asz);
+        //
+        //     auto nsz = sz - sz % N;
+        //     for (; i < nsz; i += N) {
+        //         auto l = simd_t::load(a + i, N);
+        //         auto r = simd_t::load(b + i, N);
+        //         auto mask = ui::IntMask(ui::rcast<std::uint8_t>(l == r));
+        //         if (mask.all()) continue;
+        //         for (auto k = 0ul; k < N; ++k) {
+        //             auto tl = a[i + k];
+        //             auto tr = b[i + k];
+        //             if (tl == tr) continue;
+        //             return lhs.is_neg() ? tl > tr : tl < tr;
+        //         }
+        //     }
+        // }
 
         for (; i < asz; ++i) {
-            auto tl = a[i];
-            auto tr = b[i];
+            auto tl = a[asz - i - 1];
+            auto tr = b[asz - i - 1];
             if (tl == tr) continue;
-            if (lhs.is_neg()) return tl > tr;
-            else return tl < tr;
+            return lhs.is_neg() ? tl > tr : tl < tr;
         }
         return false;
     }
