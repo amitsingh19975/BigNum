@@ -204,7 +204,7 @@ namespace big_num::internal {
                 auto nsz = bsz - bsz % N;
                 for (; i < nsz; i += N) {
                     auto l = simd_t::load(o + i, N);
-                    auto r = simd_t::load(b + i, N) + c;
+                    auto r = simd_t::load(b + i, N);
                     auto [q, tc] = ui::masked_subc<MachineConfig::bits>(l, r, c);
                     std::copy_n(q.data(), N, o + i);
                     c[0] = tc;
