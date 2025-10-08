@@ -120,10 +120,22 @@ namespace big_num::internal {
         template <std::size_t Radix>
         inline static constexpr auto parse_integer_to_block(
             std::span<MachineConfig::uint_t> out,
-            std::span<std::uint8_t> in
+            std::span<std::uint8_t> in,
+            std::pmr::memory_resource* resource = std::pmr::get_default_resource()
         ) noexcept -> void {
-            // TODO: add divide and conquer and NTT
-            parse_integer_to_block_slow<Radix>(out, in);
+            (void)resource;
+            // auto const size = in.size();
+            // if (size <= MachineConfig::parse_naive_threshold) {
+                parse_integer_to_block_slow<Radix>(out, in);
+            //     return;
+            // }
+
+            // auto const mid = size >> 1;
+            //
+            // auto lhs = std::span(in.data(), mid);
+            // auto rhs = std::span(in.data() + mid, size - mid);
+            //
+            // auto olhs = std::span();
         }
 
         inline static constexpr auto normalize_string(std::string_view num, std::string& buf) -> std::string_view {

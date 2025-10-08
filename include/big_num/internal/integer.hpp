@@ -79,6 +79,22 @@ namespace big_num::internal {
             return _data.ptr;
         }
 
+        constexpr auto begin() noexcept -> value_type* {
+            return data();
+        }
+
+        constexpr auto end() noexcept -> value_type* {
+            return data() + size();
+        }
+
+        constexpr auto begin() const noexcept -> value_type const* {
+            return data();
+        }
+
+        constexpr auto end() const noexcept -> value_type const* {
+            return data() + size();
+        }
+
         constexpr auto allocator() const noexcept -> std::pmr::polymorphic_allocator<value_type> {
             return { _resouce };
         }
@@ -124,23 +140,33 @@ namespace big_num::internal {
             return tmp;
         }
 
+        template <bool Fill = true>
         constexpr auto resize(
             size_type bits,
             value_type def = {}
         ) -> void {
             static constexpr auto N = MachineConfig::simd_uint_t::elements;
 
+            auto const old_chunks = size();
             if (bits <= _cap_bits) {
                 set_bits(bits);
+                auto const new_chunks = size();
+                if constexpr (Fill) {
+                    auto sz = std::max(new_chunks, old_chunks) - old_chunks;
+                    std::fill_n(data() + old_chunks, sz, def);
+                }
                 return;
             }
 
             auto const new_chunks = MachineConfig::align_up<N>(MachineConfig::size(bits));
-            auto const old_chunks = size();
             auto ptr = allocator().allocate(new_chunks);
             auto old_ptr = data();
             std::copy(old_ptr, old_ptr + old_chunks, ptr);
-            std::fill_n(ptr + old_chunks, new_chunks - old_chunks, def);
+            if constexpr (Fill) {
+                auto sz = std::max(new_chunks, old_chunks) - old_chunks;
+                std::fill_n(ptr + old_chunks, sz, def);
+            }
+
             if (!is_small()) {
                 allocator().deallocate(old_ptr, MachineConfig::size(_cap_bits));
             }

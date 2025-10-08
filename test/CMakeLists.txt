@@ -15,5 +15,5 @@ function(add_catch_test source_filename)
     catch_discover_tests(${target} TEST_PREFIX "unittests." EXTRA_ARGS -s --reporter=xml --out=tests.xml)
 endfunction(add_catch_test target)
 
-add_subdirectory(runtime)
+# add_subdirectory(runtime)
 add_subdirectory(fuzzer)

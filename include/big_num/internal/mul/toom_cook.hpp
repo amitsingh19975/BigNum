@@ -163,7 +163,8 @@ namespace big_num::internal {
             // 6. o3 = (o2 - o3)/2 + 2 * o_inf;
             abs_sub(o3, o2, o3);
             naive_div<2>(o3);
-            abs_add(o3, o_inf, o_inf);
+            abs_add(o3, o_inf);
+            abs_add(o3, o_inf);
 
             // 7. o2 = o2 + o1 - o4
             abs_add(o2, o1);

@@ -80,6 +80,19 @@ namespace big_num::internal {
         });
     }
 
+    constexpr auto neareast_power_of_2(std::size_t num) noexcept -> std::size_t {
+        if ((num & (num - 1)) == 0) return num;
+        --num;
+        num |= (num >> 1);	
+        num |= (num >> 2);	
+        num |= (num >> 4);	
+        num |= (num >> 8);	
+        num |= (num >> 16);	
+        num |= (num >> 32);	
+        ++num;
+        return num;
+    }
+
 } // big_num::internal
 
 #endif // AMT_BIG_NUM_INTERNAL_UTILS_HPP

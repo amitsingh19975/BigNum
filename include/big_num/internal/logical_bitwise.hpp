@@ -5,6 +5,7 @@
 #include "integer_parse.hpp"
 #include "integer.hpp"
 #include "ui.hpp"
+#include <bit>
 #include <cstddef>
 #include <type_traits>
 
@@ -708,6 +709,12 @@ namespace big_num::internal {
             out[i] = s & MachineConfig::mask;
             c = (s >> MachineConfig::bits);
         }
+
+        // auto n = in[size - 1];
+        // auto const mask = (Integer::value_type{1} << std::bit_width(n)) - 1;
+        // auto r = (~n);
+        // auto s = r + c;
+        // out[size - 1] = s & mask;
     }
 
     inline static constexpr auto twos_complement(

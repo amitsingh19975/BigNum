@@ -33,6 +33,28 @@ namespace big_num::internal {
         }
     }
 
+    inline static constexpr auto sqaure(
+        Integer& out,
+        Integer const& a,
+        std::pmr::memory_resource* resource = std::pmr::get_default_resource()
+    ) -> void {
+        auto const size = a.size();
+        if (size < 2) {
+            naive_mul_scalar(out, a, a);
+            return;
+        }
+
+        if (size <= MachineConfig::naive_mul_threshold) {
+            naive_square(out, a);
+        } else if (size <= MachineConfig::karatsuba_threshold) {
+            karatsuba_square(out, a, resource);
+        } else if (size <= MachineConfig::toom_cook_3_threshold) {
+            toom_cook_3_square(out, a);
+        } else {
+            toom_cook_3_square(out, a);
+        }
+    }
+
     inline static constexpr auto mul(
         std::span<Integer::value_type> out,
         std::span<Integer::value_type const> lhs,
@@ -53,6 +75,28 @@ namespace big_num::internal {
             toom_cook_3(out, lhs, rhs, resource);
         } else {
             toom_cook_3(out, lhs, rhs, resource);
+        }
+    }
+
+    inline static constexpr auto square(
+        std::span<Integer::value_type> out,
+        std::span<Integer::value_type const> a,
+        std::pmr::memory_resource* resource = std::pmr::get_default_resource()
+    ) -> void {
+        auto const size = std::max(a.size(), a.size());
+        if (a.size() < 2) {
+            naive_mul(out, a, a);
+            return;
+        }
+
+        if (size <= MachineConfig::naive_mul_threshold) {
+            naive_square(out, a);
+        } else if (size <= MachineConfig::karatsuba_threshold) {
+            karatsuba_square(out, a, resource);
+        } else if (size <= MachineConfig::toom_cook_3_threshold) {
+            toom_cook_3_square(out, a, resource);
+        } else {
+            toom_cook_3_square(out, a, resource);
         }
     }
 } // namespace big_num::internal

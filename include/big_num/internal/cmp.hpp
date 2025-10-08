@@ -174,7 +174,7 @@ namespace big_num::internal {
         Integer const& rhs
     ) noexcept -> bool {
         if (lhs.is_neg() != rhs.is_neg()) return false;
-        return equal(lhs, rhs);
+        return abs_equal(lhs, rhs);
     }
 
     // lhs < rhs

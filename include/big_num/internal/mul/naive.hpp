@@ -7,8 +7,11 @@
 #include "../logical_bitwise.hpp"
 #include "ui.hpp"
 #include <bit>
+#include <cstddef>
+#include <memory_resource>
 #include <span>
 #include <type_traits>
+#include <vector>
 
 namespace big_num::internal {
     namespace detail {
@@ -173,9 +176,8 @@ namespace big_num::internal {
         for (auto i = 0zu; i < lhs.size(); ++i) {
             auto l = lhs[i];
             auto c = val_t{};
-            auto j = 0zu;
 
-            for (; j < rhs.size(); ++j) {
+            for (auto j = 0zu; j < rhs.size(); ++j) {
                 auto o = out[i + j];
                 auto r = rhs[j];
                 auto [m, mc] = mul_impl<MachineConfig::bits>(l, r);
@@ -184,12 +186,58 @@ namespace big_num::internal {
                 c = tc + mc;
             }
 
-            auto k = j + i;
-            auto ls = std::span(out.data() + k, out.size() - k);
-            auto rs = std::span(&c, 1);
-            abs_add(ls, rs);
+            auto k = rhs.size() + i;
+            while (k < out.size() && c) {
+                auto [v, tc] = abs_add(out[k], c);
+                c = tc;
+                out[k++] = v;
+            }
         }
     }
+
+    // TODO: experiment with inplace square
+    // inline static constexpr auto naive_square(
+    //     std::span<Integer::value_type> out,
+    //     std::span<Integer::value_type const> a
+    // ) noexcept -> void {
+    //     if (a.size() == 0) return;
+    //
+    //     // using val_t = MachineConfig::uint_t;
+    //
+    //     assert(out.size() >= a.size() * 2);
+    //
+    //     auto const helper = [out](std::size_t j, Integer::value_type c) {
+    //         while (j < out.size() && c) {
+    //             auto [s1, c1] = abs_add(out[j], c);
+    //             out[j++] = s1;
+    //             c = c1;
+    //         }
+    //     };
+    //
+    //     auto const n = a.size();
+    //     // Squaring diagonals
+    //     for (auto i = n; i > 0; --i) {
+    //         auto ii = i - 1;
+    //         auto [v, c] = mul_impl(a[ii], a[ii]);
+    //         auto [s0, c0] = abs_add(out[ii << 1], v);
+    //         c += c0;
+    //         helper((ii << 1) + 1, c);
+    //     }
+    //
+    //     // Cross terms (2*a[i]*a[j])
+    //     for (auto i = 0zu; i < n; ++i) {
+    //         for (auto j = i + 1; j < n; ++j) {
+    //             auto ii = n - i - 1;
+    //             auto jj = n - j - 1;
+    //
+    //             auto [v, c] = mul_impl(a[ii], a[jj] * 2);
+    //             auto k = ii + jj;
+    //             auto [s0, c0] = abs_add(out[k], v);
+    //             c += c0;
+    //             helper(k + 1, c);
+    //         }
+    //     }
+    // }
 
     inline static constexpr auto naive_mul_scalar(
         Integer& out,
@@ -227,6 +275,39 @@ namespace big_num::internal {
         naive_mul(out.to_span(), lhs.to_span(), rhs.to_span());
         remove_trailing_zeros(out);
     }
+
+    inline static constexpr auto naive_square(
+        std::span<Integer::value_type> out,
+        std::span<Integer::value_type const> a
+    ) -> void {
+        naive_mul(out, a, a);
+    }
+
+    inline static constexpr auto naive_square(
+        Integer& out,
+        Integer const& a
+    ) -> void {
+        naive_mul(out, a, a);
+    }
+
+    inline static constexpr auto naive_square(
+        Integer& out,
+        std::pmr::memory_resource* resource = std::pmr::get_default_resource()
+    ) -> void {
+        auto size = out.size();
+        auto a = std::pmr::vector<Integer::value_type>(
+            out.data(),
+            out.data() + static_cast<std::ptrdiff_t>(out.size()),
+            resource
+        );
+        out.resize(size * 2 * MachineConfig::bits);
+        out.fill(0);
+        out.set_neg(false);
+        auto l = std::span(a.data(), a.size());
+        naive_mul(out.to_span(), l, l);
+        remove_trailing_zeros(out);
+    }
+
 } // namespace big_num::internal
 
 #endif // AMT_BIG_NUM_INTERNAL_MUL_NAIVE_HPP

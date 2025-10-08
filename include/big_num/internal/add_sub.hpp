@@ -92,8 +92,8 @@ namespace big_num::internal {
     inline static constexpr auto abs_add(
         std::span<Integer::value_type>       lhs,
         std::span<Integer::value_type const> rhs
-    ) -> void {
-        if (lhs.empty()) return;
+    ) -> Integer::value_type {
+        if (lhs.empty()) return {};
 
         auto o = lhs.data();
         auto b = rhs.data();
@@ -137,22 +137,24 @@ namespace big_num::internal {
             o[i] = v;
             carry = c;
         }
+
+        return carry;
     }
 
     inline static constexpr auto abs_add(
         std::span<Integer::value_type>       out,
         std::span<Integer::value_type const> lhs,
         std::span<Integer::value_type const> rhs
-    ) -> void {
+    ) -> Integer::value_type {
         auto a = lhs;
         auto b = rhs;
         auto o = out;
         if (a.size() >= b.size()) {
             std::copy(a.begin(), a.end(), o.begin());
-            abs_add(o, b);
+            return abs_add(o, b);
         } else {
             std::copy(b.begin(), b.end(), o.begin());
-            abs_add(o, a);
+            return abs_add(o, a);
         }
     }
 
@@ -184,12 +186,10 @@ namespace big_num::internal {
         std::span<Integer::value_type>       lhs,
         std::span<Integer::value_type const> rhs
     ) -> bool {
-        assert(lhs.size() >= rhs.size());
-
         auto o = lhs.data();
         auto b = rhs.data();
         auto osz = lhs.size();
-        auto bsz = rhs.size();
+        auto bsz = std::min(rhs.size(), osz);
 
         using val_t = Integer::value_type;
         using simd_t = MachineConfig::simd_uint_t;
@@ -233,7 +233,7 @@ namespace big_num::internal {
         std::span<Integer::value_type>       out,
         std::span<Integer::value_type const> lhs,
         std::span<Integer::value_type const> rhs
-    ) -> void {
+    ) -> bool {
         auto a = lhs;
         auto b = rhs;
         auto o = out;
@@ -243,16 +243,24 @@ namespace big_num::internal {
             // TODO: use size to compare and merge the less logic into the loop to avoid calling
             // `abs_less`.
             if (abs_less(lhs, rhs)) {
-                std::copy(b.begin(), b.end(), o.begin());
+                if (b.data() != o.data()) {
+                    std::copy(b.begin(), b.end(), o.begin());
+                }
                 abs_sub(o, a);
+                return true;
             } else {
-                std::copy(a.begin(), a.end(), o.begin());
+                if (a.data() != a.data()) {
+                    std::copy(a.begin(), a.end(), o.begin());
+                }
                 abs_sub(o, b);
+                return false;
             }
         } else {
-            // lhs >= rhs
-            std::copy(b.begin(), b.end(), o.begin());
-            abs_sub(o, a);
+            // lhs <= rhs
+            if (a.data() != a.data()) {
+                std::copy(a.begin(), a.end(), o.begin());
+            }
+            return abs_sub(o, b);
         }
     }
 
@@ -275,18 +283,24 @@ namespace big_num::internal {
             // `abs_less`.
             if (abs_less(lhs, rhs)) {
                 out.set_neg(!rhs.is_neg());
-                std::copy(b.begin(), b.end(), o.begin());
+                if (b.data() != o.data()) {
+                    std::copy(b.begin(), b.end(), o.begin());
+                }
                 abs_sub(o, a);
             } else {
                 out.set_neg(lhs.is_neg());
-                std::copy(a.begin(), a.end(), o.begin());
+                if (a.data() != a.data()) {
+                    std::copy(a.begin(), a.end(), o.begin());
+                }
                 abs_sub(o, b);
             }
         } else {
-            // lhs >= rhs
-            out.set_neg(lhs.is_neg());
-            std::copy(b.begin(), b.end(), o.begin());
-            abs_sub(o, a);
+            // lhs <= rhs
+            if (a.data() != a.data()) {
+                std::copy(a.begin(), a.end(), o.begin());
+            }
+            auto c = abs_sub(o, b);
+            out.set_neg((c != 0) || rhs.is_neg());
         }
 
         remove_trailing_zeros(out);

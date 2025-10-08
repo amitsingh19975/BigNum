@@ -6,6 +6,9 @@ from dataclasses import dataclass
 import argparse
 from random import randint, seed
 
+import sys
+sys.set_int_max_str_digits(0)
+
 CURRENT_PATH = Path(os.path.realpath(__file__)) / '..'
 SHARE_FILE = (CURRENT_PATH / 'shared.txt').resolve()
 ERROR_INPUT = (CURRENT_PATH / 'error.txt').resolve()
@@ -55,12 +58,35 @@ def print_error(num: str, err: str) -> None:
         f.write(num)
     print(f"{t_num} -- \x1b[31mFAILED\x1b[0m\n\t{err}")
 
+def print_binary_error(a: str, b: str, err: str) -> None:
+    t_a = a
+    t_b = b
+    if len(t_a) > 50:
+        t_a = t_a[:50] + '...'
+    if len(t_b) > 50:
+        t_b = t_b[:50] + '...'
+    with open(ERROR_INPUT, 'w') as f:
+        f.write(a)
+        f.write('\n')
+        f.write(b)
+    print(f"{t_a} + {t_b} -- \x1b[31mFAILED\x1b[0m\n\t{err}")
+
 def print_success(num: str, time: str) -> None:
     t_num = num
     if len(t_num) > 100:
         t_num = t_num[:100] + '...'
 
     print(f"{t_num} -- \x1b[32mPASSED\x1b[0m\n\tTook {time}")
+
+def print_binary_success(a: str, b: str, time: str) -> None:
+    t_a = a
+    t_b = b
+    if len(t_a) > 50:
+        t_a = t_a[:50] + '...'
+    if len(t_b) > 50:
+        t_b = t_b[:50] + '...'
+
+    print(f"{t_a} + {t_b} -- \x1b[32mPASSED\x1b[0m\n\tTook {time}")
 
 PREFIX_LIST = ['0b', '0o', '0x']
 
@@ -116,34 +142,103 @@ def test_parse_helper(path: Path, num: str, use_shared = True) -> bool:
     print_success(num, time)
     return True
 
+def test_binary_helper(path: Path, a: str, b: str, ans: str, op: str, use_shared = True) -> bool:
+    args = [f'-{op}']
+    if use_shared:
+        with open(SHARE_FILE, 'w') as f:
+            f.write(a)
+            f.write('\n')
+            f.write(b)
+        args.append('-f')
+        args.append(str(SHARE_FILE))
+    else:
+        args.append(a)
+        args.append(b)
+
+    res = run_bin(path, args)
+    if res.error:
+        print_binary_error(a, b, res.error);
+        return False
+
+    lines = read_lines()
+    if (len(lines) < 2):
+        print_binary_error(a, b, "Expected file to have number and time, but found invalid lines");
+        return False
+
+    out = lines[0].strip();
+    time = lines[1];
+    if (not compare_num(out, ans)):
+        print_binary_error(a, b, "Mismatch input and output");
+        if (res.success and res.success.strip()):
+            lines = res.success.splitlines()
+            out = ''.join([f"\t> {line}\n" for line in lines])
+            print(f"{out}\n");
+        return False
+
+    print_binary_success(a, b, time)
+    return True
+
 def test_parse(max_len: int) -> None:
     path = get_bin_path()
     len = 1
     seed("BigNum")
     while True:
-        len *= 10 #randint(1, max_len)
+        len +=100 # randint(1, max_len)
         print(f"Testing for number that has length: {len}")
         
-        num = random_number(2, len)
-        if not test_parse_helper(path, num):
-            break
-
-        num = random_number(8, len)
-        if not test_parse_helper(path, num):
-            break
+        # num = random_number(2, len)
+        # if not test_parse_helper(path, num):
+        #     break
+        #
+        # num = random_number(8, len)
+        # if not test_parse_helper(path, num):
+        #     break
 
         num = random_number(10, len)
         if not test_parse_helper(path, num):
             break
 
-        num = random_number(16, len)
-        if not test_parse_helper(path, num):
+        # num = random_number(16, len)
+        # if not test_parse_helper(path, num):
+        #     break
+
+def test_binary(max_len: int, op='a') -> None:
+    path = get_bin_path()
+    len = 1
+    seed("BigNum")
+    while True:
+        len +=100 # randint(1, max_len)
+        print(f"Testing for number that has length: {len}")
+        
+        # num = random_number(2, len)
+        # if not test_parse_helper(path, num):
+        #     break
+        #
+        # num = random_number(8, len)
+        # if not test_parse_helper(path, num):
+        #     break
+
+        a = random_number(10, len)
+        b = random_number(10, len)
+        ans = ''
+        na = int(a)
+        nb = int(b)
+        if op == 'a':
+            ans = str(na + nb)
+        elif op == 's':
+            ans = str(na - nb)
+        if not test_binary_helper(path, a, b, ans, op):
             break
+
+        # num = random_number(16, len)
+        # if not test_parse_helper(path, num):
+        #     break
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="Fuzzer")
-    parser.add_argument('-c', '--parse', action='store_false', help="Fuzzy test integer parsing.");
+    parser.add_argument('-c', '--parse', action=argparse.BooleanOptionalAction, help="Fuzzy test integer parsing.");
+    parser.add_argument('-b', '--binary', help="Fuzzy test binary operation.", choices=['a', 's']);
 
     return parser.parse_args();
 
@@ -151,6 +246,8 @@ def main() -> None:
     args = parse_args();
     if args.parse:
         test_parse(10_000_000)
+    elif args.binary:
+        test_binary(10_000_000, op = args.binary)
 
 if __name__ == "__main__":
     main()

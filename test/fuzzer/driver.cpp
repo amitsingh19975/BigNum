@@ -1,17 +1,18 @@
-#include "big_num.hpp"
-#include "big_num/basic.hpp"
-#include "big_num/basic_integer.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <format>
+#include <print>
 #include <fstream>
 #include <initializer_list>
 #include <stdexcept>
 #include <string>
+#include "big_num/internal/add_sub.hpp"
+#include "big_num/internal/integer_parse.hpp"
 
 using namespace std::chrono_literals;
 using args_t = std::vector<std::string_view>;
-using namespace dark;
+using namespace big_num::internal;
 
 struct Timer {
 	using base_type = std::chrono::time_point<std::chrono::high_resolution_clock>;
@@ -27,7 +28,7 @@ private:
 
 auto read_file(std::string_view path) -> std::vector<std::string> {
 	auto res = std::vector<std::string>{};
-	auto file = std::ifstream(path);
+	auto file = std::ifstream{ std::string(path) };
 	if (!file) {
 		throw std::runtime_error(std::format("Unable to open file: '{}'", path));
 	}
@@ -41,7 +42,7 @@ auto read_file(std::string_view path) -> std::vector<std::string> {
 }
 
 auto write_to_file(std::string_view path, std::initializer_list<std::string> const& lines) {
-	auto file = std::ofstream(path, std::ios::out | std::ios::trunc);
+	auto file = std::ofstream(std::string(path), std::ios::out | std::ios::trunc);
 	for (auto it = lines.begin(); it != lines.end(); ++it) {
 		auto const& line = *it;
 		file << line;
@@ -66,11 +67,11 @@ args_t init_args(int argc, char** argv) {
 	return res;
 }
 
-constexpr auto get_radix(std::string_view num) -> Radix {
-	if (num.starts_with("0b")) return Radix::Binary;
-	if (num.starts_with("0o")) return Radix::Octal;
-	if (num.starts_with("0x")) return Radix::Hex;
-	return Radix::Dec;
+constexpr auto get_radix(std::string_view num) -> std::uint8_t {
+	if (num.starts_with("0b")) return 2;
+	if (num.starts_with("0o")) return 8;
+	if (num.starts_with("0x")) return 16;
+	return 10;
 }
 
 void benchmark_parse(args_t& args) {
@@ -95,11 +96,73 @@ void benchmark_parse(args_t& args) {
 	}
 
 	Timer t;
-	auto a = dark::BigInteger(num);
+	auto a = Integer();
+    auto err = parse_integer(a, num);
+    if (!err) {
+        std::println(stderr, "Error: {}", err.error());
+        return;
+    }
 	auto time = t.end();
 	if (file_path) {
-		auto res = a.to_str(get_radix(num));
-		write_to_file(*file_path, { a.to_str(get_radix(num), true), time });
+        auto n = to_string(a, get_radix(num), { .show_prefix = true });
+		write_to_file(*file_path, { n, time });
+	} else {
+		std::println("benchmark_parse: took {}", time);
+	}
+}
+
+void benchmark_binary(args_t& args, auto&& fn) {
+    if (args.size() == 0) {
+        throw std::runtime_error("Please provide at least one argument.");
+    }
+    auto a = std::string();
+    auto b = std::string();
+	
+	std::optional<std::string_view> file_path{};
+	if (args.back() == "-f") {
+        args.pop_back();
+		auto file = args.back();
+		args.pop_back();
+		file_path = file;
+
+		auto res = read_file(file);
+		if (res.empty()) {
+			throw std::runtime_error("No arg found");
+		}
+        if (res.size() < 2) {
+            throw std::runtime_error("Please provide two numbers.");
+        }
+        a = res[0];
+        b = res[1];
+	} else {
+        if (args.size() < 2) {
+            throw std::runtime_error("Please provide two numbers after the flag.");
+        }
+
+        a = args.back();
+        args.pop_back();
+        b = args.back();
+        args.pop_back();
+    }
+    Integer l, r, res;
+    auto err = parse_integer(l, a);
+    if (!err) {
+        std::println(stderr, "Error: {}", err.error());
+        exit(1);
+    }
+
+    err = parse_integer(r, b);
+    if (!err) {
+        std::println(stderr, "Error: {}", err.error());
+        exit(1);
+    }
+
+	Timer t;
+    fn(res, l, r);
+	auto time = t.end();
+	if (file_path) {
+        auto n = to_string(res, get_radix(a), { .show_prefix = true });
+		write_to_file(*file_path, { n, time });
 	} else {
 		std::println("benchmark_parse: took {}", time);
 	}
@@ -110,6 +173,8 @@ void parse_args(args_t& args) {
 		auto arg = args.back();
 		args.pop_back();
 		if (arg == "-c") return benchmark_parse(args);
+		if (arg == "-a") return benchmark_binary(args,[](auto& res, auto const& l, auto const& r) { add(res, l, r); });
+		if (arg == "-s") return benchmark_binary(args,[](auto& res, auto const& l, auto const& r) { sub(res, l, r); });
 	}
 }
 

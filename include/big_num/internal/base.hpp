@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include "ui.hpp"
-#include "ui/features.hpp"
 
 namespace big_num::internal {
 
@@ -123,5 +122,12 @@ namespace big_num::internal {
     template <typename T>
     using accumulator_t = detail::AccumulatorType<T>::type;
 } // big_num::internal
+
+#ifdef ENABLE_BIG_NUM_TRACE
+#include <print>
+#define BIG_NUM_TRACE(EXPR) EXPR
+#else
+#define BIG_NUM_TRACE(EXPR)
+#endif
 
 #endif // AMT_BIG_NUM_INTERNAL_BASE_HPP
