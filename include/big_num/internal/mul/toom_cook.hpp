@@ -6,6 +6,7 @@
 #include "../div/naive.hpp"
 #include "../logical_bitwise.hpp"
 #include "../number_span.hpp"
+#include "big_num/internal/integer_parse.hpp"
 #include "naive.hpp"
 #include <algorithm>
 #include <memory_resource>
@@ -16,9 +17,9 @@ namespace big_num::internal {
     namespace detail {
         template <std::size_t NaiveThreshold>
         inline static constexpr auto toom_cook_3_helper(
-            NumberSpan<Integer::value_type> out,
-            NumberSpan<Integer::value_type const> const& lhs,
-            NumberSpan<Integer::value_type const> const& rhs,
+            num_t out,
+            const_num_t const& lhs,
+            const_num_t const& rhs,
             std::size_t size,
             std::pmr::memory_resource* resource = std::pmr::get_default_resource()
         ) -> void {
@@ -77,8 +78,8 @@ namespace big_num::internal {
                 std::span<Integer::value_type const> m2, // upper 
                 int_t& p_n2,  // p(-2)
                 int_t& p_n1,  // p(-1)
-                NumberSpan<Integer::value_type>& sp_n2,
-                NumberSpan<Integer::value_type>& sp_n1,
+                num_t& sp_n2,
+                num_t& sp_n1,
                 int_t& p_0,   // p(0)
                 int_t& p_1,   // p(1)
                 int_t& p_inf  // p(inf)
@@ -205,29 +206,30 @@ namespace big_num::internal {
             BIG_NUM_TRACE(std::println("on2: {}\non1: {}\no0: {}\no1: {}\noinf: {}", o_n2, o_n1, o_0, o_1, o_inf));
 
             // 1. o0 = o_0;
-            auto o0 = o_0;
+            auto o0 = NumberSpan(std::span(o_0_buf));
             // 1. o4 = o_inf;
-            auto o4 = o_inf;
+            auto o4 = NumberSpan(std::span(o_inf_buf));
 
             // 3. o3 = (o_n2 - o_1) / 3
-            auto o3 = o_n2;
+            auto o3 = NumberSpan(std::span(o_n2_buf));
             sub(o3, o_1);
             naive_div<3>(o3);
             BIG_NUM_TRACE(std::println("3: {}", o3));
 
             // 4. o1 = (o_1 - o_n1) / 2
-            auto o1 = o_1;
+            auto o1 = NumberSpan(std::span(o_1_buf));
             sub(o1, o_n1);
             naive_div<2>(o1);
             BIG_NUM_TRACE(std::println("4: {}", o1));
 
             // 5. o2 = o_n1 - o_0;
-            auto o2 = o_n1;
+            auto o2 = NumberSpan(std::span(o_n1_buf));
             sub(o2, o_0);
             BIG_NUM_TRACE(std::println("5: {}", o2));
 
             // 6. o3 = (o2 - o3)/2 + 2 * o_inf;
-            sub(o3, o2, o3);
+            sub(o3, o2);
+            o3.set_neg(!o3.is_neg());
             naive_div<2>(o3);
             add(o3, o_inf);
             add(o3, o_inf);
@@ -262,9 +264,9 @@ namespace big_num::internal {
 
     template <std::size_t NaiveThreshold = MachineConfig::naive_mul_threshold>
     inline static constexpr auto toom_cook_3(
-        NumberSpan<Integer::value_type> out,
-        NumberSpan<Integer::value_type const> lhs,
-        NumberSpan<Integer::value_type const> rhs,
+        num_t& out,
+        const_num_t lhs,
+        const_num_t rhs,
         std::pmr::memory_resource* resource = std::pmr::get_default_resource()
     ) -> void {
         using uint_t = MachineConfig::uint_t;
@@ -302,6 +304,7 @@ namespace big_num::internal {
         if (out.data() != res.data()) {
             std::copy_n(res.begin(), out.size(), out.begin());
         }
+        out.set_neg(lhs.is_neg() != rhs.is_neg());
     }
 
     template <std::size_t NaiveThreshold = MachineConfig::naive_mul_threshold>
@@ -332,7 +335,8 @@ namespace big_num::internal {
             ta, tb,
             sz
         );
-        out.set_neg(lhs.is_neg() ^ rhs.is_neg());
+        out.set_neg(lhs.is_neg() != rhs.is_neg());
+        remove_trailing_zeros(out);
     }
 } // namespace big_num::internal
 

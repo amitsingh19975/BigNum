@@ -39,10 +39,10 @@ namespace big_num::internal {
 
             BIG_NUM_TRACE(std::println("size: {}, half: {}, low: {}, high: {}", size, half, low, high));
 
-            auto xl = lhs.slice(0, low);
-            auto xu = lhs.slice(low);
-            auto yl = rhs.slice(0, low);
-            auto yu = rhs.slice(low);
+            auto xl = lhs.slice(0, low).abs();
+            auto xu = lhs.slice(low).abs();
+            auto yl = rhs.slice(0, low).abs();
+            auto yu = rhs.slice(low).abs();
 
             auto sum_sz = std::max(low, high) + 1;
             auto x_sum = std::pmr::vector<uint_t>{sum_sz, 0, resource};
@@ -53,12 +53,14 @@ namespace big_num::internal {
             auto z2_buff = std::pmr::vector<uint_t>{sz, 0, resource};
             auto z3_buff = std::pmr::vector<uint_t>{sz, 0, resource};
 
-            auto z0 = NumberSpan(std::span(z0_buff), false);
-            auto z2 = NumberSpan(std::span(z0_buff), false);
-            auto z3 = NumberSpan(std::span(z0_buff), false);
+            auto z0 = NumberSpan(std::span(z0_buff));
+            auto z2 = NumberSpan(std::span(z2_buff));
+            auto z3 = NumberSpan(std::span(z3_buff));
 
-            auto xc = abs_add({ x_sum.data(), sum_sz - 1 }, xl, xu);
-            auto yc = abs_add({ y_sum.data(), sum_sz - 1 }, yl, yu);
+            auto sx_sum = NumberSpan(std::span{ x_sum.data(), sum_sz - 1 });
+            auto sy_sum = NumberSpan(std::span{ y_sum.data(), sum_sz - 1 });
+            auto xc = add(sx_sum, xl, xu);
+            auto yc = add(sy_sum, yl, yu);
             x_sum[sum_sz - 1] = xc;
             y_sum[sum_sz - 1] = yc;
             if (xc + yc == 0) sum_sz -= 1;
@@ -69,16 +71,16 @@ namespace big_num::internal {
             BIG_NUM_TRACE(std::println("======= Z0 = xl * yl ========="));
             karatsuba_mul_helper<NaiveThreshold>(
                 z0,
-                { xl },
-                { yl },
+                xl,
+                yl,
                 xl.size()
             );
 
             BIG_NUM_TRACE(std::println("======= Z2 = xu * yu ========="));
             karatsuba_mul_helper<NaiveThreshold>(
                 z2,
-                { xu },
-                { yu },
+                xu,
+                yu,
                 xu.size()
             );
 
@@ -97,18 +99,27 @@ namespace big_num::internal {
             //     return std::span(out + start, s);
             // };
 
+            z0.trim_trailing_zeros();
+            z2.trim_trailing_zeros();
+            z3.trim_trailing_zeros();
+
             BIG_NUM_TRACE(std::println("z0: {}\nz2: {}\nz3: {}", z0, z2, z3));
 
+            // lhs * rhs = z2 * B^2 + z1 * B + z0
+            // z0 = x_l * y_l
+            // z1 = z3 - z0 - z2
+            // z2 = x_u * y_u
+            // z3 = (x_l + x_u) * (y_l + y_u)
             auto o1 = out;
-            abs_add(o1, z0);
+            add(o1, z0);
 
             auto o3 = out.slice(low * 2);
-            abs_add(o3, z2);
+            add(o3, z2);
 
             auto o2 = out.slice(low);
-            abs_add(o2, z3);
-            abs_add(z0, z2);
-            abs_sub(o2, z0);
+            sub(z3, z0);
+            sub(z3, z2);
+            add(o2, z3);
 
             BIG_NUM_TRACE(std::println("O: {}", out));
         }
@@ -146,7 +157,7 @@ namespace big_num::internal {
             size
         );
 
-        out.set_neg(lhs.is_neg() ^ rhs.is_neg());
+        out.set_neg(lhs.is_neg() != rhs.is_neg());
         remove_trailing_zeros(out);
     }
 
@@ -189,7 +200,7 @@ namespace big_num::internal {
         if (out.data() != res.data()) {
             std::copy_n(tmp.begin(), out.size(), out.begin());
         }
-        out.set_neg(lhs.is_neg() ^ rhs.is_neg());
+        out.set_neg(lhs.is_neg() != rhs.is_neg());
     }
 } // namespace big_num::internal
 

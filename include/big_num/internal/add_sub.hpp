@@ -97,11 +97,13 @@ namespace big_num::internal {
         const_num_t const& rhs
     ) noexcept -> Integer::value_type {
         if (lhs.empty()) return {};
+        auto tmp_r = rhs;
+        tmp_r.trim_trailing_zeros();
 
         auto o = lhs.data();
         auto b = rhs.data();
         auto osz = lhs.size();
-        auto bsz = std::min(rhs.size(), osz);
+        auto bsz = std::min(tmp_r.size(), osz);
 
         using val_t = Integer::value_type;
 
@@ -132,6 +134,8 @@ namespace big_num::internal {
             o[i] = v;
             carry = c;
         }
+
+        if (bsz < tmp_r.size()) carry = rhs[bsz - 1];
 
         auto sz = osz;
         while (i < sz && carry) {
@@ -185,10 +189,12 @@ namespace big_num::internal {
         const_num_t const& rhs
     ) noexcept -> Integer::value_type {
         // lhs.trim_trailing_zeros();
+        auto tmp_r = rhs;
+        tmp_r.trim_trailing_zeros();
         auto o = lhs.data();
         auto b = rhs.data();
         auto osz = lhs.size();
-        auto bsz = std::min(rhs.size(), osz);
+        auto bsz = std::min(tmp_r.size(), osz);
 
         using val_t = Integer::value_type;
 
@@ -218,6 +224,8 @@ namespace big_num::internal {
             carry = c;
         }
 
+        if (bsz < tmp_r.size()) carry = rhs[bsz - 1];
+
         auto sz = osz;
         while (carry && i < sz) {
             auto [v, c] = abs_sub(o[i], carry);
@@ -239,15 +247,10 @@ namespace big_num::internal {
         const_num_t const& lhs,
         const_num_t const& rhs
     ) noexcept -> Integer::value_type {
-        auto a = lhs;
-        auto b = rhs;
-        auto o = out;
-
-        // lhs <= rhs
-        if (a.data() != o.data()) {
-            std::copy(a.begin(), a.end(), o.begin());
+        if (lhs.data() != out.data()) {
+            std::copy(lhs.begin(), lhs.end(), out.begin());
         }
-        return abs_sub<Take2sComplement>(o, b);
+        return abs_sub<Take2sComplement>(out, rhs);
     }
 
     template <bool Take2sComplement = false>
@@ -365,9 +368,9 @@ namespace big_num::internal {
             out.set_neg(lhs.is_neg());
             return c;
         } else if (ls && rs) {
-            // out = -lhs - (-rhs) => -lhs + rhs
-            auto c = abs_sub<true>(out, rhs, lhs);
-            out.set_neg(c);
+            // out = -lhs - (-rhs) => -(lhs - rhs)
+            auto c = abs_sub<true>(out, lhs, rhs);
+            out.set_neg(c == 0);
             return c;
         } else {
             // out = lhs - rhs
