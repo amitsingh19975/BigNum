@@ -3,8 +3,6 @@
 
 #include "base.hpp"
 #include "integer_parse.hpp"
-#include "utils.hpp"
-#include "logical_bitwise.hpp"
 #include "mul/mul.hpp"
 #include "integer.hpp"
 #include <memory_resource>

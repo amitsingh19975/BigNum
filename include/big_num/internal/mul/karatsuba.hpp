@@ -48,7 +48,7 @@ namespace big_num::internal {
             auto x_sum = std::pmr::vector<uint_t>{sum_sz, 0, resource};
             auto y_sum = std::pmr::vector<uint_t>{sum_sz, 0, resource};
 
-            auto const sz = size + 1;
+            auto const sz = size;
             auto z0_buff = std::pmr::vector<uint_t>{sz, 0, resource};
             auto z2_buff = std::pmr::vector<uint_t>{sz, 0, resource};
             auto z3_buff = std::pmr::vector<uint_t>{sz, 0, resource};
@@ -87,17 +87,11 @@ namespace big_num::internal {
             BIG_NUM_TRACE(std::println("======= Z3 = x_sum * y_sum ========="));
             karatsuba_mul_helper<NaiveThreshold>(
                 z3,
-                { x_sum },
-                { y_sum },
+                { x_sum.data(), sum_sz },
+                { y_sum.data(), sum_sz },
                 sum_sz
             );
             BIG_NUM_TRACE(std::println("=========== End ==========="));
-
-            // auto helper = [out_size, out](std::size_t start, std::size_t sz) {
-            //     auto ns = std::max(out_size, start) - start;
-            //     auto s = std::min(ns, sz);
-            //     return std::span(out + start, s);
-            // };
 
             z0.trim_trailing_zeros();
             z2.trim_trailing_zeros();
@@ -105,11 +99,6 @@ namespace big_num::internal {
 
             BIG_NUM_TRACE(std::println("z0: {}\nz2: {}\nz3: {}", z0, z2, z3));
 
-            // lhs * rhs = z2 * B^2 + z1 * B + z0
-            // z0 = x_l * y_l
-            // z1 = z3 - z0 - z2
-            // z2 = x_u * y_u
-            // z3 = (x_l + x_u) * (y_l + y_u)
             auto o1 = out;
             add(o1, z0);
 

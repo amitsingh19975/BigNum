@@ -130,7 +130,7 @@ namespace big_num::internal {
         ) noexcept -> NumberSpan requires (!std::is_const_v<T>) {
             auto sz = std::min(size, this->size());
             sz = std::max(start, sz) - start;
-            return { m_base.data() + start, sz, is_neg(), bits() };
+            return { m_base.data() + start, sz };
         }
 
         constexpr auto slice(
@@ -139,7 +139,7 @@ namespace big_num::internal {
         ) const noexcept -> NumberSpan<std::add_const_t<value_type>> {
             auto sz = std::min(size, this->size());
             sz = std::max(start, sz) - start;
-            return { m_base.data() + start, sz, is_neg(), bits() };
+            return { m_base.data() + start, sz };
         }
 
         constexpr auto abs() const noexcept -> NumberSpan {
