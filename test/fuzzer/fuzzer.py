@@ -23,7 +23,7 @@ class Result:
 
 DIGITS = "0123456789abcdef"
 
-def random_number(base: int, length: int) -> str:
+def random_number(base: int, length: int, is_neg: bool = False) -> str:
     prefix = ''
     if base == 2:
         prefix = '0b'
@@ -31,8 +31,14 @@ def random_number(base: int, length: int) -> str:
         prefix = '0o'
     elif base == 16:
         prefix = '0x'
-    return prefix + ''.join([DIGITS[randint(0, base - 1)] for _ in range(length)])
-        
+    s = ''
+    if is_neg:
+        s = '-'
+    n = [DIGITS[randint(0, base - 1)] for _ in range(length)]
+    while n[0] == '0':
+        n[0] = DIGITS[randint(0, base - 1)]
+
+    return s + prefix + ''.join(n)
 
 def run_bin(path: Path, args: List[str]) -> Result:
     temp_args = [str(path.resolve())] + args;
@@ -58,7 +64,7 @@ def print_error(num: str, err: str) -> None:
         f.write(num)
     print(f"{t_num} -- \x1b[31mFAILED\x1b[0m\n\t{err}")
 
-def print_binary_error(a: str, b: str, err: str) -> None:
+def print_binary_error(a: str, b: str, ans: str, err: str) -> None:
     t_a = a
     t_b = b
     if len(t_a) > 50:
@@ -69,6 +75,8 @@ def print_binary_error(a: str, b: str, err: str) -> None:
         f.write(a)
         f.write('\n')
         f.write(b)
+        f.write('\n')
+        f.write(ans)
     print(f"{t_a} + {t_b} -- \x1b[31mFAILED\x1b[0m\n\t{err}")
 
 def print_success(num: str, time: str) -> None:
@@ -78,7 +86,7 @@ def print_success(num: str, time: str) -> None:
 
     print(f"{t_num} -- \x1b[32mPASSED\x1b[0m\n\tTook {time}")
 
-def print_binary_success(a: str, b: str, time: str) -> None:
+def print_binary_success(a: str, b: str, op: str, time: str) -> None:
     t_a = a
     t_b = b
     if len(t_a) > 50:
@@ -86,7 +94,12 @@ def print_binary_success(a: str, b: str, time: str) -> None:
     if len(t_b) > 50:
         t_b = t_b[:50] + '...'
 
-    print(f"{t_a} + {t_b} -- \x1b[32mPASSED\x1b[0m\n\tTook {time}")
+    o = op
+    if op == 'a':
+        o = '+'
+    elif op == 's':
+        o = '-'
+    print(f"{t_a} {o} {t_b} -- \x1b[32mPASSED\x1b[0m\n\tTook {time}")
 
 PREFIX_LIST = ['0b', '0o', '0x']
 
@@ -157,25 +170,25 @@ def test_binary_helper(path: Path, a: str, b: str, ans: str, op: str, use_shared
 
     res = run_bin(path, args)
     if res.error:
-        print_binary_error(a, b, res.error);
+        print_binary_error(a, b, ans, res.error);
         return False
 
     lines = read_lines()
     if (len(lines) < 2):
-        print_binary_error(a, b, "Expected file to have number and time, but found invalid lines");
+        print_binary_error(a, b, ans, "Expected file to have number and time, but found invalid lines");
         return False
 
     out = lines[0].strip();
     time = lines[1];
     if (not compare_num(out, ans)):
-        print_binary_error(a, b, "Mismatch input and output");
+        print_binary_error(a, b, ans, "Mismatch input and output");
         if (res.success and res.success.strip()):
             lines = res.success.splitlines()
             out = ''.join([f"\t> {line}\n" for line in lines])
             print(f"{out}\n");
         return False
 
-    print_binary_success(a, b, time)
+    print_binary_success(a, b, op, time)
     return True
 
 def test_parse(max_len: int) -> None:
@@ -204,11 +217,13 @@ def test_parse(max_len: int) -> None:
 
 def test_binary(max_len: int, op='a') -> None:
     path = get_bin_path()
-    len = 1
+    len1 = 1
+    len2 = 1
     seed("BigNum")
     while True:
-        len +=100 # randint(1, max_len)
-        print(f"Testing for number that has length: {len}")
+        len1 = randint(1, max_len)
+        len2 = randint(1, max_len)
+        print(f"Testing for number that has length: {len1=}, {len2=}")
         
         # num = random_number(2, len)
         # if not test_parse_helper(path, num):
@@ -218,8 +233,10 @@ def test_binary(max_len: int, op='a') -> None:
         # if not test_parse_helper(path, num):
         #     break
 
-        a = random_number(10, len)
-        b = random_number(10, len)
+        a_neg = True if randint(0, 10) > 5 else False
+        b_neg = True if randint(0, 10) > 5 else False
+        a = random_number(10, len1, a_neg)
+        b = random_number(10, len2, b_neg)
         ans = ''
         na = int(a)
         nb = int(b)
@@ -247,7 +264,7 @@ def main() -> None:
     if args.parse:
         test_parse(10_000_000)
     elif args.binary:
-        test_binary(10_000_000, op = args.binary)
+        test_binary(10_000, op = args.binary)
 
 if __name__ == "__main__":
     main()
