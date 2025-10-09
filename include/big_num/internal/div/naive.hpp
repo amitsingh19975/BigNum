@@ -10,6 +10,7 @@
 #include <bit>
 #include <span>
 
+// TODO: fix signs
 namespace big_num::internal {
     namespace detail {
         inline static constexpr auto fast_div(
@@ -36,10 +37,10 @@ namespace big_num::internal {
 
     template <bool BoundaryCheck = true>
     inline static constexpr auto naive_div(
-        std::span<Integer::value_type> out_q,
-        std::span<Integer::value_type> out_r,
-        std::span<Integer::value_type const> num,
-        std::span<Integer::value_type const> den
+        NumberSpan<Integer::value_type> out_q,
+        NumberSpan<Integer::value_type> out_r,
+        NumberSpan<Integer::value_type const> const& num,
+        NumberSpan<Integer::value_type const> const& den
     ) noexcept -> bool {
         if constexpr (BoundaryCheck) {
             if (den.empty()) return false;
@@ -47,7 +48,7 @@ namespace big_num::internal {
         }
         if (detail::fast_div(out_q, out_r, num, den)) return true;
 
-        auto m = num.size() * MachineConfig::bits;
+        auto m = num.bits();
         auto n = den.size();
 
         [[maybe_unused]] auto q = num.size() - n;
@@ -122,8 +123,8 @@ namespace big_num::internal {
     template <Integer::value_type Den, bool IsSameBuffer = false>
         requires (Den > 0)
     inline static constexpr auto naive_div(
-        std::span<Integer::value_type> out_q,
-        std::span<Integer::value_type const> num
+        NumberSpan<Integer::value_type> out_q,
+        NumberSpan<Integer::value_type const> const& num
     ) noexcept -> Integer::value_type {
         assert(out_q.size() == num.size());
 
@@ -153,15 +154,15 @@ namespace big_num::internal {
     template <Integer::value_type Den>
         requires (Den > 0)
     inline static constexpr auto naive_div(
-        std::span<Integer::value_type> out
+       NumberSpan<Integer::value_type>& out
     ) noexcept -> Integer::value_type {
         return naive_div<Den, true>(out, out);
     }
 
     template <bool IsSameBuffer = false>
     inline static constexpr auto naive_div(
-        std::span<Integer::value_type> out_q,
-        std::span<Integer::value_type const> num,
+        NumberSpan<Integer::value_type> out_q,
+        NumberSpan<Integer::value_type const> const& num,
         Integer::value_type den
     ) noexcept -> Integer::value_type {
         assert(den > 0);
@@ -191,7 +192,7 @@ namespace big_num::internal {
     }
 
     inline static constexpr auto naive_div(
-        std::span<Integer::value_type> out,
+        NumberSpan<Integer::value_type> out,
         Integer::value_type den
     ) noexcept -> Integer::value_type {
         return naive_div<true>(out, out, den);

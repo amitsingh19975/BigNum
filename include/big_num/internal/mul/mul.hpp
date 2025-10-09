@@ -27,9 +27,9 @@ namespace big_num::internal {
         } else if (size <= MachineConfig::karatsuba_threshold) {
             karatsuba_mul(out, lhs, rhs, resource);
         } else if (size <= MachineConfig::toom_cook_3_threshold) {
-            toom_cook_3(out, lhs, rhs);
+            toom_cook_3(out, lhs, rhs, resource);
         } else {
-            toom_cook_3(out, lhs, rhs);
+            toom_cook_3(out, lhs, rhs, resource);
         }
     }
 
@@ -38,27 +38,13 @@ namespace big_num::internal {
         Integer const& a,
         std::pmr::memory_resource* resource = std::pmr::get_default_resource()
     ) -> void {
-        auto const size = a.size();
-        if (size < 2) {
-            naive_mul_scalar(out, a, a);
-            return;
-        }
-
-        if (size <= MachineConfig::naive_mul_threshold) {
-            naive_square(out, a);
-        } else if (size <= MachineConfig::karatsuba_threshold) {
-            karatsuba_square(out, a, resource);
-        } else if (size <= MachineConfig::toom_cook_3_threshold) {
-            toom_cook_3_square(out, a);
-        } else {
-            toom_cook_3_square(out, a);
-        }
+        mul(out, a, a, resource);
     }
 
     inline static constexpr auto mul(
-        std::span<Integer::value_type> out,
-        std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs,
+        NumberSpan<Integer::value_type> out,
+        NumberSpan<Integer::value_type const> const& lhs,
+        NumberSpan<Integer::value_type const> const& rhs,
         std::pmr::memory_resource* resource = std::pmr::get_default_resource()
     ) -> void {
         auto const size = std::max(lhs.size(), rhs.size());
@@ -79,25 +65,11 @@ namespace big_num::internal {
     }
 
     inline static constexpr auto square(
-        std::span<Integer::value_type> out,
-        std::span<Integer::value_type const> a,
+        NumberSpan<Integer::value_type> out,
+        NumberSpan<Integer::value_type const> const& a,
         std::pmr::memory_resource* resource = std::pmr::get_default_resource()
     ) -> void {
-        auto const size = std::max(a.size(), a.size());
-        if (a.size() < 2) {
-            naive_mul(out, a, a);
-            return;
-        }
-
-        if (size <= MachineConfig::naive_mul_threshold) {
-            naive_square(out, a);
-        } else if (size <= MachineConfig::karatsuba_threshold) {
-            karatsuba_square(out, a, resource);
-        } else if (size <= MachineConfig::toom_cook_3_threshold) {
-            toom_cook_3_square(out, a, resource);
-        } else {
-            toom_cook_3_square(out, a, resource);
-        }
+        mul(out, a, a, resource);
     }
 } // namespace big_num::internal
 

@@ -7,6 +7,7 @@
 #include <memory_resource>
 #include <span>
 #include "base.hpp"
+#include "number_span.hpp"
 
 namespace big_num::internal {
 
@@ -214,19 +215,19 @@ namespace big_num::internal {
             std::swap(lhs._resouce, rhs._resouce);
         }
 
-        constexpr auto to_span() noexcept -> std::span<value_type> {
-            return { data(), size() };
+        constexpr auto to_span() noexcept -> NumberSpan<value_type> {
+            return { data(), size(), is_neg(), bits() };
         }
 
-        constexpr auto to_span() const noexcept -> std::span<value_type const> {
-            return { data(), size() };
+        constexpr auto to_span() const noexcept -> NumberSpan<value_type const> {
+            return { data(), size(), is_neg(), bits() };
         }
 
-        constexpr operator std::span<value_type>() noexcept {
+        constexpr operator NumberSpan<value_type>() noexcept {
             return to_span();
         }
 
-        constexpr operator std::span<const value_type>() const noexcept {
+        constexpr operator NumberSpan<const value_type>() const noexcept {
             return to_span();
         }
     };

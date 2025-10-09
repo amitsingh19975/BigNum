@@ -2,7 +2,7 @@
 #define AMT_BIG_NUM_INTERNAL_INTEGER_PARSE_HPP
 
 #include "base.hpp"
-#include "ui/features.hpp"
+#include "number_span.hpp"
 #include "utils.hpp"
 #include "integer.hpp"
 #include <algorithm>
@@ -29,25 +29,8 @@ namespace big_num::internal {
         v.resize(sz);
     }
 
-    inline static constexpr auto calculate_bits_required(
-        std::span<Integer::value_type const> v
-    ) noexcept -> std::size_t {
-        if (v.empty()) return 0;
-        auto sz = v.size();
-        auto ptr = v.data();
-        auto i = sz;
-        for (; i > 0; --i) {
-            if (ptr[i - 1]) break;
-        }
-        if (i == 0) return 0;
-
-        auto blocks = i - 1;
-        auto bits = blocks * MachineConfig::bits;
-        return bits + static_cast<std::size_t>(std::bit_width(ptr[blocks]));
-    }
-
     inline static constexpr auto fix_bits_required(Integer& v) noexcept -> void {
-        v.resize(calculate_bits_required(v));
+        v.resize(detail::calculate_bits_required(v));
     }
 
     inline static constexpr auto remove_trailing_zeros(
@@ -356,7 +339,7 @@ namespace big_num::internal {
 
     // if radix is 0, we print the underlying representation.
     inline static auto to_string(
-        Integer const& in,
+        const_num_t const& in,
         std::uint8_t radix = 10,
         IntegerStringConvConfig config = {}
     ) -> std::string {

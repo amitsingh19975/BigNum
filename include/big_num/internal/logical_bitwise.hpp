@@ -3,24 +3,23 @@
 
 #include "base.hpp"
 #include "integer_parse.hpp"
+#include "number_span.hpp"
 #include "integer.hpp"
 #include "ui.hpp"
-#include <bit>
 #include <cstddef>
 #include <type_traits>
 
 namespace big_num::internal {
 
     inline static constexpr auto bitwise_and(
-        Integer& out,
-        Integer const& lhs,
-        Integer const& rhs
+        num_t out,
+        const_num_t const& lhs,
+        const_num_t const& rhs
     ) noexcept -> void {
         auto lsz = lhs.size();
         auto rsz = rhs.size();
         auto osz = std::max(lhs.bits(), rhs.bits());
-        out.resize(osz);
-        out.fill(0);
+        assert(out.size() >= osz);
 
         using simd_t = MachineConfig::simd_uint_t; 
         static constexpr auto N = simd_t::elements;
@@ -47,15 +46,24 @@ namespace big_num::internal {
         }
     }
 
-    inline static constexpr auto bitwise_or(
+    inline static constexpr auto bitwise_and(
         Integer& out,
         Integer const& lhs,
         Integer const& rhs
+    ) -> void {
+        auto osz = std::max(lhs.bits(), rhs.bits());
+        out.resize(osz);
+        out.fill(0);
+        bitwise_and(out.to_span(), lhs.to_span(), rhs.to_span());
+    }
+
+    inline static constexpr auto bitwise_or(
+        num_t out,
+        const_num_t const& lhs,
+        const_num_t const& rhs
     ) noexcept -> void {
         auto lsz = lhs.size();
         auto rsz = rhs.size();
-        auto osz = std::max(lhs.bits(), rhs.bits());
-        out.resize(osz);
 
         using simd_t = MachineConfig::simd_uint_t; 
         static constexpr auto N = simd_t::elements;
@@ -90,15 +98,23 @@ namespace big_num::internal {
         }
     }
 
-    inline static constexpr auto bitwise_xor(
+    inline static constexpr auto bitwise_or(
         Integer& out,
         Integer const& lhs,
         Integer const& rhs
+    ) -> void {
+        auto osz = std::max(lhs.bits(), rhs.bits());
+        out.resize(osz);
+        bitwise_or(out.to_span(), lhs.to_span(), rhs.to_span());
+    }
+
+    inline static constexpr auto bitwise_xor(
+        num_t out,
+        const_num_t const& lhs,
+        const_num_t const& rhs
     ) noexcept -> void {
         auto lsz = lhs.size();
         auto rsz = rhs.size();
-        auto osz = std::max(lhs.bits(), rhs.bits());
-        out.resize(osz);
 
         using simd_t = MachineConfig::simd_uint_t; 
         static constexpr auto N = simd_t::elements;
@@ -133,12 +149,21 @@ namespace big_num::internal {
         }
     }
 
-    inline static constexpr auto bitwise_not(
+    inline static constexpr auto bitwise_xor(
         Integer& out,
-        Integer const& a
+        Integer const& lhs,
+        Integer const& rhs
+    ) -> void {
+        auto osz = std::max(lhs.bits(), rhs.bits());
+        out.resize(osz);
+        bitwise_xor(out.to_span(), lhs.to_span(), rhs.to_span());
+    }
+
+    inline static constexpr auto bitwise_not(
+        num_t out,
+        const_num_t const& a
     ) noexcept -> void {
         auto sz = a.size();
-        out.resize(a.bits());
 
         using simd_t = MachineConfig::simd_uint_t; 
         static constexpr auto N = simd_t::elements;
@@ -162,11 +187,18 @@ namespace big_num::internal {
         }
     }
 
+    inline static constexpr auto bitwise_not(
+        Integer& out,
+        Integer const& a
+    ) -> void {
+        out.resize(a.bits());
+        bitwise_not(out.to_span(), a.to_span());
+    }
+
     inline static constexpr auto negate(
-        Integer& a
-    ) noexcept -> Integer& {
+        num_t a
+    ) noexcept -> void {
         a.set_neg(!a.is_neg());
-        return a;
     }
 
     namespace detail {

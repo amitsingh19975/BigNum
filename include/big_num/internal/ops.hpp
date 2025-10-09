@@ -2,8 +2,8 @@
 #define AMT_BIG_NUM_INTERNAL_OPS_HPP
 
 #include "base.hpp"
-#include "big_num/internal/integer_parse.hpp"
-#include "big_num/internal/utils.hpp"
+#include "integer_parse.hpp"
+#include "utils.hpp"
 #include "logical_bitwise.hpp"
 #include "mul/mul.hpp"
 #include "integer.hpp"

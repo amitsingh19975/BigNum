@@ -92,11 +92,12 @@ namespace big_num::internal {
 
     template <bool IsSameBuffer = false>
     inline static constexpr auto naive_mul(
-        std::span<Integer::value_type> out,
-        std::span<Integer::value_type const> lhs,
+        num_t& out,
+        const_num_t const& lhs,
         Integer::value_type rhs
     ) noexcept -> void {
         if (rhs == 0 || lhs.empty()) return;
+        out.copy_sign(lhs);
 
         if (rhs & (rhs - 1)) {
             auto [res, c] = mul_impl<MachineConfig::bits>(lhs[0], rhs);
@@ -121,12 +122,14 @@ namespace big_num::internal {
 
     template <Integer::value_type R, bool IsSameBuffer = false>
     inline static constexpr auto naive_mul(
-        std::span<Integer::value_type> out,
-        std::span<Integer::value_type const> lhs
+        num_t& out,
+        const_num_t const& lhs
     ) noexcept -> void {
         if constexpr (R == 0) return;
         else {
             if (lhs.empty()) return;
+            out.copy_sign(lhs);
+
             if constexpr (R & (R - 1)) {
                 auto [res, c] = mul_impl<MachineConfig::bits>(lhs[0], R);
                 out[0] = res;
@@ -151,15 +154,15 @@ namespace big_num::internal {
 
     template <Integer::value_type R>
     inline static constexpr auto naive_mul(
-        std::span<Integer::value_type> out
+        num_t& out
     ) noexcept -> void {
         naive_div<R, true>(out, out);
     }
 
     inline static constexpr auto naive_mul(
-        std::span<Integer::value_type> out,
-        std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs
+        num_t& out,
+        const_num_t const& lhs,
+        const_num_t const& rhs
     ) noexcept -> void {
         if (lhs.size() == 0 || rhs.size() == 0) return;
 
@@ -172,6 +175,8 @@ namespace big_num::internal {
             naive_mul(out, lhs, rhs.data()[0]);
             return;
         }
+
+        out.set_neg(lhs.is_neg() ^ rhs.is_neg());
 
         for (auto i = 0zu; i < lhs.size(); ++i) {
             auto l = lhs[i];
@@ -246,10 +251,11 @@ namespace big_num::internal {
     ) -> void {
         out.resize(lhs.size() + rhs.size());
         out.set_neg(static_cast<bool>(lhs.is_neg() ^ rhs.is_neg()));
+        auto o = out.to_span();
         if (lhs.size() < 2) {
-            naive_mul(out.to_span(), rhs.to_span(), lhs.data()[0]);
+            naive_mul(o, rhs.to_span(), lhs.data()[0]);
         } else {
-            naive_mul(out.to_span(), lhs.to_span(), rhs.data()[0]);
+            naive_mul(o, lhs.to_span(), rhs.data()[0]);
         }
         remove_trailing_zeros(out);
     }
@@ -271,23 +277,10 @@ namespace big_num::internal {
         Integer const& rhs
     ) -> void {
         out.resize(lhs.bits() + rhs.bits() + MachineConfig::bits);
-        out.set_neg(static_cast<bool>(lhs.is_neg() ^ rhs.is_neg()));
-        naive_mul(out.to_span(), lhs.to_span(), rhs.to_span());
+        auto o = out.to_span();
+        naive_mul(o, lhs.to_span(), rhs.to_span());
+        out.set_neg(o.is_neg());
         remove_trailing_zeros(out);
-    }
-
-    inline static constexpr auto naive_square(
-        std::span<Integer::value_type> out,
-        std::span<Integer::value_type const> a
-    ) -> void {
-        naive_mul(out, a, a);
-    }
-
-    inline static constexpr auto naive_square(
-        Integer& out,
-        Integer const& a
-    ) -> void {
-        naive_mul(out, a, a);
     }
 
     inline static constexpr auto naive_square(
@@ -304,7 +297,8 @@ namespace big_num::internal {
         out.fill(0);
         out.set_neg(false);
         auto l = std::span(a.data(), a.size());
-        naive_mul(out.to_span(), l, l);
+        auto o = out.to_span();
+        naive_mul(o, { l }, { l });
         remove_trailing_zeros(out);
     }
 

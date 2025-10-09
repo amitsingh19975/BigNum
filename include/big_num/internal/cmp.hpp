@@ -2,8 +2,7 @@
 #define AMT_BIG_NUM_INTERNAL_CMP_HPP
 
 #include "base.hpp"
-#include "integer_parse.hpp"
-#include "integer.hpp"
+#include "number_span.hpp"
 #include "ui.hpp"
 #include <type_traits>
 
@@ -11,7 +10,7 @@ namespace big_num::internal {
     namespace detail {
         template <std::size_t K>
             requires (K < 3)
-        inline static constexpr auto merge_helper(Integer const& a) noexcept -> MachineConfig::iacc_t {
+        inline static constexpr auto merge_helper(const_num_t const& a) noexcept -> MachineConfig::iacc_t {
             using acc_t = MachineConfig::iacc_t; 
             auto ptr = a.data();
             auto neg = a.is_neg();
@@ -29,8 +28,8 @@ namespace big_num::internal {
 
         template <typename T>
         inline static constexpr auto equal_small(
-            Integer const& lhs,
-            Integer const& rhs,
+            const_num_t const& lhs,
+            const_num_t const& rhs,
             T&& op = std::equal_to<>{}
         ) noexcept -> bool {
             auto lsz = lhs.size();
@@ -96,8 +95,8 @@ namespace big_num::internal {
     } // namespace detail
 
     inline static constexpr auto abs_equal(
-        Integer const& lhs,
-        Integer const& rhs
+        const_num_t const& lhs,
+        const_num_t const& rhs
     ) noexcept -> bool {
         if (lhs.bits() < MachineConfig::total_bits * 2 && rhs.bits() < MachineConfig::total_bits * 2) {
             return detail::equal_small(lhs, rhs, std::equal_to<>{});
@@ -109,7 +108,7 @@ namespace big_num::internal {
 
         auto a = lhs.data();
         auto b = rhs.data();
-        auto asz = lhs.size();
+        auto asz = std::min(lhs.size(), rhs.size());
         auto sz = MachineConfig::align_up<N>(asz);
 
         auto i = std::size_t{};
@@ -133,45 +132,9 @@ namespace big_num::internal {
         return true;
     }
 
-    inline static constexpr auto abs_equal(
-        std::span<Integer::value_type const> lhs,
-        std::size_t lb, // left bits
-        std::span<Integer::value_type const> rhs,
-        std::size_t rb // right bits
-    ) noexcept -> bool {
-        auto a = Integer::from(lhs, lb);
-        auto b = Integer::from(rhs, rb);
-        return abs_equal(a, b);
-    }
-
-    inline static constexpr auto abs_equal(
-        std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs
-    ) noexcept -> bool {
-        auto lb = calculate_bits_required(lhs);
-        auto rb = calculate_bits_required(rhs);
-        return abs_equal(lhs, lb, rhs, rb);
-    }
-
     inline static constexpr auto equal(
-        std::span<Integer::value_type const> lhs,
-        std::size_t lb, // left bits
-        std::span<Integer::value_type const> rhs,
-        std::size_t rb // right bits
-    ) noexcept -> bool {
-        return abs_equal(lhs, lb, rhs, rb);
-    }
-
-    inline static constexpr auto equal(
-        std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs
-    ) noexcept -> bool {
-        return abs_equal(lhs, rhs);
-    }
-
-    inline static constexpr auto equal(
-        Integer const& lhs,
-        Integer const& rhs
+        const_num_t const& lhs,
+        const_num_t const& rhs
     ) noexcept -> bool {
         if (lhs.is_neg() != rhs.is_neg()) return false;
         return abs_equal(lhs, rhs);
@@ -180,8 +143,8 @@ namespace big_num::internal {
     // lhs < rhs
     template <bool IsAbs = true>
     inline static constexpr auto abs_less(
-        Integer const& lhs,
-        Integer const& rhs
+        const_num_t const& lhs,
+        const_num_t const& rhs
     ) noexcept -> bool {
         if (lhs.bits() < MachineConfig::total_bits * 2 && rhs.bits() < MachineConfig::total_bits * 2) {
             return detail::equal_small(lhs, rhs, std::less<>{});
@@ -199,7 +162,7 @@ namespace big_num::internal {
         // using uint_t = MachineConfig::uint_t;
         auto a = lhs.data();
         auto b = rhs.data();
-        auto asz = lhs.size();
+        auto asz = std::min(lhs.size(), rhs.size());
 
         // lhs < rhs
         // -lhs < -rhs => lhs > rhs
@@ -230,35 +193,18 @@ namespace big_num::internal {
             auto tl = a[asz - i - 1];
             auto tr = b[asz - i - 1];
             if (tl == tr) continue;
-            return lhs.is_neg() ? tl > tr : tl < tr;
+            if constexpr (IsAbs) {
+                return tl < tr;
+            } else {
+                return lhs.is_neg() ? tl > tr : tl < tr;
+            }
         }
         return false;
     }
 
-    inline static constexpr auto abs_less(
-        std::span<Integer::value_type const> lhs,
-        std::size_t lb, // left bits
-        std::span<Integer::value_type const> rhs,
-        std::size_t rb // right bits
-    ) noexcept -> bool {
-        auto a = Integer::from(lhs, lb);
-        auto b = Integer::from(rhs, rb);
-        return abs_less<true>(a, b);
-    }
-
-    inline static constexpr auto abs_less(
-       std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs
-    ) noexcept -> bool {
-        auto lb = calculate_bits_required(lhs);
-        auto rb = calculate_bits_required(rhs);
-        return abs_less(lhs, lb, rhs, rb);
-    }
-
-
     inline static constexpr auto less(
-        Integer const& lhs,
-        Integer const& rhs
+        const_num_t const& lhs,
+        const_num_t const& rhs
     ) noexcept -> bool {
         // -lhs < rhs => true
         if (lhs.is_neg() && !rhs.is_neg()) return true;
@@ -268,27 +214,10 @@ namespace big_num::internal {
         return abs_less<false>(lhs, rhs);
     }
 
-    inline static constexpr auto less(
-        std::span<Integer::value_type const> lhs,
-        std::size_t lb, // left bits
-        std::span<Integer::value_type const> rhs,
-        std::size_t rb // right bits
-    ) noexcept -> bool {
-        return abs_less(lhs, lb, rhs, rb);
-    }
-
-    inline static constexpr auto less(
-        std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs
-    ) noexcept -> bool {
-        return abs_less(lhs, rhs);
-    }
-
     // lhs <= rhs
-    template <bool IsAbs = true>
     inline static constexpr auto abs_less_equal(
-        Integer const& lhs,
-        Integer const& rhs
+        const_num_t const& lhs,
+        const_num_t const& rhs
     ) noexcept -> bool {
         if (lhs.bits() < MachineConfig::total_bits * 2 && rhs.bits() < MachineConfig::total_bits * 2) {
             return detail::equal_small(lhs, rhs, std::less_equal<>{});
@@ -296,13 +225,8 @@ namespace big_num::internal {
 
         // => -lhs[32bits] < -rhs[8bits]
         // =>  lhs[32bits] >  rhs[8bits]
-        if constexpr (IsAbs) {
-            if (lhs.bits() < rhs.bits()) return true;
-            else if (lhs.bits() > rhs.bits()) return false;
-        } else {
-            if (lhs.bits() < rhs.bits()) return !lhs.is_neg();
-            else if (lhs.bits() > rhs.bits()) return lhs.is_neg();
-        }
+        if (lhs.bits() < rhs.bits()) return !lhs.is_neg();
+        else if (lhs.bits() > rhs.bits()) return lhs.is_neg();
 
         // using uint_t = MachineConfig::uint_t;
         using simd_t = MachineConfig::simd_uint_t; 
@@ -310,7 +234,7 @@ namespace big_num::internal {
 
         auto a = lhs.data();
         auto b = rhs.data();
-        auto asz = lhs.size();
+        auto asz = std::min(lhs.size(), rhs.size());
         auto sz = MachineConfig::align_up<N>(asz);
 
         auto i = std::size_t{};
@@ -341,145 +265,44 @@ namespace big_num::internal {
         return true;
     }
 
-    inline static constexpr auto abs_less_equal(
-        std::span<Integer::value_type const> lhs,
-        std::size_t lb, // left bits
-        std::span<Integer::value_type const> rhs,
-        std::size_t rb // right bits
-    ) noexcept -> bool {
-        auto a = Integer::from(lhs, lb);
-        auto b = Integer::from(rhs, rb);
-        return abs_less_equal(a, b);
-    }
-
-    inline static constexpr auto abs_less_equal(
-        std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs
-    ) noexcept -> bool {
-        auto lb = calculate_bits_required(lhs);
-        auto rb = calculate_bits_required(rhs);
-        return abs_less_equal(lhs, lb, rhs, rb);
-    }
-
-
     inline static constexpr auto less_equal(
-        Integer const& lhs,
-        Integer const& rhs
+        const_num_t const& lhs,
+        const_num_t const& rhs
     ) noexcept -> bool {
         // -lhs < rhs => true
         if (lhs.is_neg() && !rhs.is_neg()) return true;
         // lhs < -rhs => false
         if (!lhs.is_neg() && rhs.is_neg()) return false;
 
-        return abs_less_equal<false>(lhs, rhs);
-    }
-
-    inline static constexpr auto less_equal(
-        std::span<Integer::value_type const> lhs,
-        std::size_t lb, // left bits
-        std::span<Integer::value_type const> rhs,
-        std::size_t rb // right bits
-    ) noexcept -> bool {
-        return abs_less_equal(lhs, lb, rhs, rb);
-    }
-
-    inline static constexpr auto less_equal(
-        std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs
-    ) noexcept -> bool {
-        return abs_less_equal(lhs, rhs);
+        return abs_less_equal(lhs.abs(), rhs.abs());
     }
 
     // lhs > rhs
     inline static constexpr auto abs_greater(
-        Integer const& lhs,
-        Integer const& rhs
-    ) noexcept -> bool {
-        return !abs_less_equal(lhs, rhs);
-    }
-
-    inline static constexpr auto abs_greater(
-        std::span<Integer::value_type const> lhs,
-        std::size_t lb, // left bits
-        std::span<Integer::value_type const> rhs,
-        std::size_t rb // right bits
-    ) noexcept -> bool {
-        return !abs_less_equal(lhs, lb, rhs, rb);
-    }
-
-    inline static constexpr auto abs_greater(
-        std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs
+        const_num_t const& lhs,
+        const_num_t const& rhs
     ) noexcept -> bool {
         return !abs_less_equal(lhs, rhs);
     }
 
     inline static constexpr auto greater(
-        Integer const& lhs,
-        Integer const& rhs
-    ) noexcept -> bool {
-        return !less_equal(lhs, rhs);
-    }
-
-    inline static constexpr auto greater(
-        std::span<Integer::value_type const> lhs,
-        std::size_t lb, // left bits
-        std::span<Integer::value_type const> rhs,
-        std::size_t rb // right bits
-    ) noexcept -> bool {
-        return !less_equal(lhs, lb, rhs, rb);
-    }
-
-    inline static constexpr auto greater(
-        std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs
+        const_num_t const& lhs,
+        const_num_t const& rhs
     ) noexcept -> bool {
         return !less_equal(lhs, rhs);
     }
 
     // lhs > rhs
     inline static constexpr auto abs_greater_equal(
-        Integer const& lhs,
-        Integer const& rhs
-    ) noexcept -> bool {
-        return !abs_less(lhs, rhs);
-    }
-
-    inline static constexpr auto abs_greater_equal(
-        std::span<Integer::value_type const> lhs,
-        std::size_t lb, // left bits
-        std::span<Integer::value_type const> rhs,
-        std::size_t rb // right bits
-    ) noexcept -> bool {
-        return !abs_less(lhs, lb, rhs, rb);
-    }
-
-    inline static constexpr auto abs_greater_equal(
-        std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs
+        const_num_t const& lhs,
+        const_num_t const& rhs
     ) noexcept -> bool {
         return !abs_less(lhs, rhs);
     }
 
     inline static constexpr auto greater_equal(
-        Integer const& lhs,
-        Integer const& rhs
-    ) noexcept -> bool {
-        return !less(lhs, rhs);
-    }
-
-    inline static constexpr auto greater_equal(
-        std::span<Integer::value_type const> lhs,
-        std::size_t lb, // left bits
-        std::span<Integer::value_type const> rhs,
-        std::size_t rb // right bits
-    ) noexcept -> bool {
-        return !less(lhs, lb, rhs, rb);
-    }
-
-    inline static constexpr auto greater_equal(
-        std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs
+        const_num_t const& lhs,
+        const_num_t const& rhs
     ) noexcept -> bool {
         return !less(lhs, rhs);
     }

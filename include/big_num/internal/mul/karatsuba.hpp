@@ -6,25 +6,23 @@
 #include "naive.hpp"
 #include <algorithm>
 #include <memory_resource>
-#include <span>
 #include <vector>
 
 namespace big_num::internal {
     namespace detail {
         template <std::size_t NaiveThreshold>
         inline static constexpr auto karatsuba_mul_helper(
-            Integer::value_type* out,
-            std::size_t out_size,
-            Integer::value_type const* lhs,
-            Integer::value_type const* rhs,
+            num_t out,
+            const_num_t const& lhs,
+            const_num_t const& rhs,
             std::size_t size,
             std::pmr::memory_resource* resource = std::pmr::get_default_resource()
         ) -> void {
             using uint_t = MachineConfig::uint_t;
             if (size <= NaiveThreshold) {
-                auto o = std::span(out, out_size);
-                auto l = std::span(lhs, size);
-                auto r = std::span(rhs, size);
+                auto o = out;
+                auto l = lhs.slice(0, size);
+                auto r = rhs.slice(0, size);
                 naive_mul(o, l, r);
                 return;
             }
@@ -41,19 +39,23 @@ namespace big_num::internal {
 
             BIG_NUM_TRACE(std::println("size: {}, half: {}, low: {}, high: {}", size, half, low, high));
 
-            auto xl = std::span(lhs, low);
-            auto xu = std::span(lhs + low, high);
-            auto yl = std::span(rhs, low);
-            auto yu = std::span(rhs + low, high);
+            auto xl = lhs.slice(0, low);
+            auto xu = lhs.slice(low);
+            auto yl = rhs.slice(0, low);
+            auto yu = rhs.slice(low);
 
             auto sum_sz = std::max(low, high) + 1;
             auto x_sum = std::pmr::vector<uint_t>{sum_sz, 0, resource};
             auto y_sum = std::pmr::vector<uint_t>{sum_sz, 0, resource};
 
             auto const sz = size + 1;
-            auto z0 = std::pmr::vector<uint_t>{sz, 0, resource};
-            auto z2 = std::pmr::vector<uint_t>{sz, 0, resource};
-            auto z3 = std::pmr::vector<uint_t>{sz, 0, resource};
+            auto z0_buff = std::pmr::vector<uint_t>{sz, 0, resource};
+            auto z2_buff = std::pmr::vector<uint_t>{sz, 0, resource};
+            auto z3_buff = std::pmr::vector<uint_t>{sz, 0, resource};
+
+            auto z0 = NumberSpan(std::span(z0_buff), false);
+            auto z2 = NumberSpan(std::span(z0_buff), false);
+            auto z3 = NumberSpan(std::span(z0_buff), false);
 
             auto xc = abs_add({ x_sum.data(), sum_sz - 1 }, xl, xu);
             auto yc = abs_add({ y_sum.data(), sum_sz - 1 }, yl, yu);
@@ -66,49 +68,49 @@ namespace big_num::internal {
 
             BIG_NUM_TRACE(std::println("======= Z0 = xl * yl ========="));
             karatsuba_mul_helper<NaiveThreshold>(
-                z0.data(), z0.size(),
-                xl.data(),
-                yl.data(),
+                z0,
+                { xl },
+                { yl },
                 xl.size()
             );
 
             BIG_NUM_TRACE(std::println("======= Z2 = xu * yu ========="));
             karatsuba_mul_helper<NaiveThreshold>(
-                z2.data(), z2.size(),
-                xu.data(),
-                yu.data(),
+                z2,
+                { xu },
+                { yu },
                 xu.size()
             );
 
             BIG_NUM_TRACE(std::println("======= Z3 = x_sum * y_sum ========="));
             karatsuba_mul_helper<NaiveThreshold>(
-                z3.data(), z3.size(),
-                x_sum.data(),
-                y_sum.data(),
+                z3,
+                { x_sum },
+                { y_sum },
                 sum_sz
             );
             BIG_NUM_TRACE(std::println("=========== End ==========="));
 
-            auto helper = [out_size, out](std::size_t start, std::size_t sz) {
-                auto ns = std::max(out_size, start) - start;
-                auto s = std::min(ns, sz);
-                return std::span(out + start, s);
-            };
+            // auto helper = [out_size, out](std::size_t start, std::size_t sz) {
+            //     auto ns = std::max(out_size, start) - start;
+            //     auto s = std::min(ns, sz);
+            //     return std::span(out + start, s);
+            // };
 
             BIG_NUM_TRACE(std::println("z0: {}\nz2: {}\nz3: {}", z0, z2, z3));
 
-            auto o1 = helper(0, out_size);
+            auto o1 = out;
             abs_add(o1, z0);
 
-            auto o3 = helper(low << 1, out_size);
+            auto o3 = out.slice(low * 2);
             abs_add(o3, z2);
 
-            auto o2 = helper(low, out_size);
+            auto o2 = out.slice(low);
             abs_add(o2, z3);
             abs_add(z0, z2);
             abs_sub(o2, z0);
 
-            BIG_NUM_TRACE(std::println("O: {}", helper(0, out_size)));
+            BIG_NUM_TRACE(std::println("O: {}", out));
         }
     } // namespace detail
 
@@ -126,48 +128,33 @@ namespace big_num::internal {
 
         auto alloc = std::pmr::polymorphic_allocator<Integer::value_type>{resource};
         auto a = std::pmr::vector<uint_t>{size, 0, resource};
-        auto b = std::pmr::vector<uint_t>{size, 0, resource};
+        auto b = std::pmr::vector<uint_t>{resource};
 
         std::copy_n(lhs.data(), lhs.size(), a.begin());
-        std::copy_n(rhs.data(), rhs.size(), b.begin());
+
+        auto ta = NumberSpan(std::span(a), false);
+        auto tb = NumberSpan(std::span(a), false);
+        if (!(lhs.data() == rhs.data() && lhs.size() == rhs.size())) {
+            b.resize(size, 0);
+            std::copy_n(rhs.data(), rhs.size(), b.begin());
+            tb = { b, false };
+        }
 
         detail::karatsuba_mul_helper<MachineConfig::nearest_even_number(NaiveThreshold)>(
-            out.data(), out.size(),
-            a.data(), b.data(),
+            out,
+            ta, tb,
             size
         );
 
-        remove_trailing_zeros(out);
-    }
-
-    template <std::size_t NaiveThreshold = MachineConfig::naive_mul_threshold>
-    inline static constexpr auto karatsuba_square(
-        Integer& out,
-        Integer const& a,
-        std::pmr::memory_resource* resource = std::pmr::get_default_resource()
-    ) -> void {
-        using uint_t = MachineConfig::uint_t;
-
-        auto size = a.size();
-        out.resize((size << 1) * MachineConfig::bits);
-
-        auto alloc = std::pmr::polymorphic_allocator<Integer::value_type>{resource};
-        auto tmp = std::pmr::vector<uint_t>{a.data(), a.data() + a.size(), resource};
-
-        detail::karatsuba_mul_helper<MachineConfig::nearest_even_number(NaiveThreshold)>(
-            out.data(), out.size(),
-            tmp.data(), tmp.data(),
-            size
-        );
-
+        out.set_neg(lhs.is_neg() ^ rhs.is_neg());
         remove_trailing_zeros(out);
     }
 
     template <std::size_t NaiveThreshold = MachineConfig::naive_mul_threshold>
     inline static constexpr auto karatsuba_mul(
-        std::span<Integer::value_type> out,
-        std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs,
+        num_t& out,
+        const_num_t const& lhs,
+        const_num_t const& rhs,
         std::pmr::memory_resource* resource = std::pmr::get_default_resource()
     ) -> void {
         using uint_t = MachineConfig::uint_t;
@@ -178,46 +165,31 @@ namespace big_num::internal {
         auto res = out;
         if (size * 2 > out.size()) {
             tmp.resize(size * 2, 0);
-            res = tmp;
+            res = { tmp };
         }
         auto a = std::pmr::vector<uint_t>{size, 0, resource};
-        auto b = std::pmr::vector<uint_t>{size, 0, resource};
+        auto b = std::pmr::vector<uint_t>{resource};
 
         std::copy_n(lhs.data(), lhs.size(), a.begin());
-        std::copy_n(rhs.data(), rhs.size(), b.begin());
+
+        auto ta = NumberSpan(std::span(a), false);
+        auto tb = NumberSpan(std::span(a), false);
+        if (!(lhs.data() == rhs.data() && lhs.size() == rhs.size())) {
+            b.resize(size, 0);
+            std::copy_n(rhs.data(), rhs.size(), b.begin());
+            tb = { b, false };
+        }
 
         detail::karatsuba_mul_helper<MachineConfig::nearest_even_number(NaiveThreshold)>(
-            res.data(), res.size(),
-            a.data(), b.data(),
+            res,
+            ta, tb,
             size
         );
 
         if (out.data() != res.data()) {
             std::copy_n(tmp.begin(), out.size(), out.begin());
         }
-    }
-
-    template <std::size_t NaiveThreshold = MachineConfig::naive_mul_threshold>
-    inline static constexpr auto karatsuba_square(
-        std::span<Integer::value_type> out,
-        std::span<Integer::value_type const> a,
-        std::pmr::memory_resource* resource = std::pmr::get_default_resource()
-    ) -> void {
-        using uint_t = MachineConfig::uint_t;
-        auto size = a.size();
-        assert((size << 1) <= out.size());
-
-        auto alloc = std::pmr::polymorphic_allocator<Integer::value_type>{resource};
-        auto tmp = std::pmr::vector<uint_t>{size, 0, resource};
-        auto tmp0 = std::pmr::vector<uint_t>(resource);
-
-        std::copy_n(a.data(), a.size(), tmp.begin());
-
-        detail::karatsuba_mul_helper<MachineConfig::nearest_even_number(NaiveThreshold)>(
-            out.data(), out.size(),
-            tmp.data(), tmp.data(),
-            size
-        );
+        out.set_neg(lhs.is_neg() ^ rhs.is_neg());
     }
 } // namespace big_num::internal
 

@@ -2,11 +2,14 @@
 #define AMT_BIG_NUM_INTERNAL_ADD_SUB_HPP
 
 #include "base.hpp"
+#include "big_num/internal/logical_bitwise.hpp"
 #include "cmp.hpp"
 #include "integer_parse.hpp"
 #include "integer.hpp"
 #include "ui.hpp"
+#include <cstddef>
 #include <type_traits>
+#include <utility>
 
 namespace big_num::internal {
     template <std::size_t Bits = MachineConfig::bits, std::integral T>
@@ -84,15 +87,15 @@ namespace big_num::internal {
             auto res = acc_t{lhs} - r;
             return {
                 static_cast<T>(res & mask),
-                static_cast<T>(lhs < rhs)
+                static_cast<T>(lhs < r)
             };
         }
     }
 
     inline static constexpr auto abs_add(
-        std::span<Integer::value_type>       lhs,
-        std::span<Integer::value_type const> rhs
-    ) -> Integer::value_type {
+        num_t       lhs,
+        const_num_t const& rhs
+    ) noexcept -> Integer::value_type {
         if (lhs.empty()) return {};
 
         auto o = lhs.data();
@@ -101,14 +104,14 @@ namespace big_num::internal {
         auto bsz = std::min(rhs.size(), osz);
 
         using val_t = Integer::value_type;
-        using simd_t = MachineConfig::simd_uint_t;
-        static constexpr auto N = simd_t::elements;
 
         auto carry = val_t{};
 
         auto i = std::size_t{};
         if constexpr (MachineConfig::bits < sizeof(val_t) * 8) {
             if (!std::is_constant_evaluated()) {
+                using simd_t = MachineConfig::simd_uint_t;
+                static constexpr auto N = simd_t::elements;
                 auto c = simd_t::zeroed();
                 auto nsz = bsz - bsz % N;
                 for (; i < nsz; i += N) {
@@ -142,10 +145,10 @@ namespace big_num::internal {
     }
 
     inline static constexpr auto abs_add(
-        std::span<Integer::value_type>       out,
-        std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs
-    ) -> Integer::value_type {
+        num_t       out,
+        const_num_t const& lhs,
+        const_num_t const& rhs
+    ) noexcept -> Integer::value_type {
         auto a = lhs;
         auto b = rhs;
         auto o = out;
@@ -170,36 +173,32 @@ namespace big_num::internal {
         auto a = lhs.to_span();
         auto b = rhs.to_span();
 
-        if (a.size() >= b.size()) {
-            out.set_neg(lhs.is_neg());
-            std::copy(a.begin(), a.end(), o.begin());
-            abs_add(o, b);
-        } else {
-            out.set_neg(rhs.is_neg());
-            std::copy(b.begin(), b.end(), o.begin());
-            abs_add(o, a);
-        }
+        std::copy(a.begin(), a.end(), o.begin());
+        abs_add(o, b);
+
         remove_trailing_zeros(out);
     }
 
+    template <bool Take2sComplement = false>
     inline static constexpr auto abs_sub(
-        std::span<Integer::value_type>       lhs,
-        std::span<Integer::value_type const> rhs
-    ) -> bool {
+        num_t       lhs,
+        const_num_t const& rhs
+    ) noexcept -> Integer::value_type {
+        // lhs.trim_trailing_zeros();
         auto o = lhs.data();
         auto b = rhs.data();
         auto osz = lhs.size();
         auto bsz = std::min(rhs.size(), osz);
 
         using val_t = Integer::value_type;
-        using simd_t = MachineConfig::simd_uint_t;
-        static constexpr auto N = simd_t::elements;
 
         auto carry = val_t{};
 
         auto i = std::size_t{};
         if constexpr (MachineConfig::bits < sizeof(val_t) * 8) {
             if (!std::is_constant_evaluated()) {
+                using simd_t = MachineConfig::simd_uint_t;
+                static constexpr auto N = simd_t::elements;
                 auto c = simd_t::zeroed();
                 auto nsz = bsz - bsz % N;
                 for (; i < nsz; i += N) {
@@ -225,51 +224,118 @@ namespace big_num::internal {
             o[i++] = v;
             carry = c;
         }
+
+        if constexpr (Take2sComplement) {
+            if (carry) {
+                twos_complement({ lhs.data(), i });
+            }
+        }
         return carry;
     }
 
-    template <bool Swap = true>
+    template <bool Take2sComplement = false>
     inline static constexpr auto abs_sub(
-        std::span<Integer::value_type>       out,
-        std::span<Integer::value_type const> lhs,
-        std::span<Integer::value_type const> rhs
-    ) -> bool {
+        num_t       out,
+        const_num_t const& lhs,
+        const_num_t const& rhs
+    ) noexcept -> Integer::value_type {
         auto a = lhs;
         auto b = rhs;
         auto o = out;
 
-        if constexpr (Swap) {
-            // a < b
-            // TODO: use size to compare and merge the less logic into the loop to avoid calling
-            // `abs_less`.
-            if (abs_less(lhs, rhs)) {
-                if (b.data() != o.data()) {
-                    std::copy(b.begin(), b.end(), o.begin());
-                }
-                abs_sub(o, a);
-                return true;
-            } else {
-                if (a.data() != a.data()) {
-                    std::copy(a.begin(), a.end(), o.begin());
-                }
-                abs_sub(o, b);
-                return false;
-            }
-        } else {
-            // lhs <= rhs
-            if (a.data() != a.data()) {
-                std::copy(a.begin(), a.end(), o.begin());
-            }
-            return abs_sub(o, b);
+        // lhs <= rhs
+        if (a.data() != o.data()) {
+            std::copy(a.begin(), a.end(), o.begin());
         }
+        return abs_sub<Take2sComplement>(o, b);
     }
 
-    template <bool Swap = true>
+    template <bool Take2sComplement = false>
     inline static constexpr auto abs_sub(
         Integer& out,
         Integer const& lhs,
         Integer const& rhs
-    ) -> void {
+    ) -> Integer::value_type {
+        auto const bits = std::max(lhs.bits(), rhs.bits());
+        out.resize(bits);
+
+        auto a = lhs.to_span();
+        auto b = rhs.to_span();
+        auto o = out.to_span();
+
+        // lhs <= rhs
+        if (a.data() != o.data()) {
+            std::copy(a.begin(), a.end(), o.begin());
+        }
+        auto c = abs_sub<Take2sComplement>(o, b);
+
+        remove_trailing_zeros(out);
+        return c;
+    }
+
+    inline static constexpr auto add(
+        num_t& out,
+        const_num_t const& lhs,
+        const_num_t const& rhs
+    ) noexcept -> num_t::value_type {
+        auto const ls = lhs.is_neg();
+        auto const rs = rhs.is_neg();
+        // both are -ve or +ve
+        if (ls == rs) {
+            auto c = abs_add(out, lhs, rhs);
+            out.copy_sign(lhs);
+            return c;
+        } else if (ls && !rs) {
+            // out = -lhs + rhs => rhs - lhs
+            auto c = abs_sub<true>(out, rhs, lhs);
+            out.set_neg(c);
+            return c;
+        } else {
+            // out = lhs - rhs
+            auto c = abs_sub<true>(out, lhs, rhs);
+            out.set_neg(c);
+            return c;
+        }
+    }
+
+    inline static constexpr auto sub(
+        num_t& out,
+        const_num_t const& lhs,
+        const_num_t const& rhs
+    ) noexcept -> num_t::value_type;
+
+    inline static constexpr auto sub(
+        num_t& lhs,
+        const_num_t const& rhs
+    ) noexcept -> num_t::value_type;
+
+    inline static constexpr auto add(
+        num_t& lhs,
+        const_num_t const& rhs
+    ) noexcept -> num_t::value_type {
+        auto const ls = lhs.is_neg();
+        auto const rs = rhs.is_neg();
+        if (ls == rs) {
+            auto c = abs_add(lhs, rhs);
+            return c;
+        } else if (ls && !rs) {
+            // out = -lhs + rhs => -(lhs - rhs)
+            auto c = abs_sub<true>(lhs, rhs);
+            lhs.set_neg(c == 0);
+            return c;
+        } else {
+            // out = lhs - rhs
+            auto c = abs_sub<true>(lhs, rhs);
+            lhs.set_neg(c);
+            return c;
+        }
+    }
+
+    inline static constexpr auto add(
+        Integer& out,
+        Integer const& lhs,
+        Integer const& rhs
+    ) -> Integer::value_type {
         auto const bits = std::max(lhs.bits(), rhs.bits());
         out.resize(bits + 1);
 
@@ -277,49 +343,60 @@ namespace big_num::internal {
         auto b = rhs.to_span();
         auto o = out.to_span();
 
-        if constexpr (Swap) {
-            // a < b
-            // TODO: use size to compare and merge the less logic into the loop to avoid calling
-            // `abs_less`.
-            if (abs_less(lhs, rhs)) {
-                out.set_neg(!rhs.is_neg());
-                if (b.data() != o.data()) {
-                    std::copy(b.begin(), b.end(), o.begin());
-                }
-                abs_sub(o, a);
-            } else {
-                out.set_neg(lhs.is_neg());
-                if (a.data() != a.data()) {
-                    std::copy(a.begin(), a.end(), o.begin());
-                }
-                abs_sub(o, b);
-            }
-        } else {
-            // lhs <= rhs
-            if (a.data() != a.data()) {
-                std::copy(a.begin(), a.end(), o.begin());
-            }
-            auto c = abs_sub(o, b);
-            out.set_neg((c != 0) || rhs.is_neg());
-        }
-
+        // lhs <= rhs
+        auto c = add(o, a, b);
+        out.set_neg(o.is_neg());
         remove_trailing_zeros(out);
+        return c;
     }
 
-    inline static constexpr auto add(
-        Integer& out,
-        Integer const& lhs,
-        Integer const& rhs
-    ) -> void {
-        if (lhs.is_neg() == rhs.is_neg()) {
-            abs_add(out, lhs, rhs);
+    inline static constexpr auto sub(
+        num_t& out,
+        const_num_t const& lhs,
+        const_num_t const& rhs
+    ) noexcept -> num_t::value_type {
+        auto const ls = lhs.is_neg();
+        auto const rs = rhs.is_neg();
+        // both are -ve or +ve
+        if (ls != rs) {
+            // out = lhs - (-rhs) => lhs + rhs
+            // out = -lhs - rhs => -(lhs + rhs)
+            auto c = abs_add(out, lhs, rhs);
+            out.set_neg(lhs.is_neg());
+            return c;
+        } else if (ls && rs) {
+            // out = -lhs - (-rhs) => -lhs + rhs
+            auto c = abs_sub<true>(out, rhs, lhs);
+            out.set_neg(c);
+            return c;
         } else {
-            // |-lhs| < |-rhs|
-            if (abs_less(lhs, rhs)) {
-                abs_sub<false>(out, rhs, lhs);
-            } else {
-                abs_sub<false>(out, lhs, rhs);
-            }
+            // out = lhs - rhs
+            auto c = abs_sub<true>(out, lhs, rhs);
+            out.set_neg(c);
+            return c;
+        }
+    }
+
+    inline static constexpr auto sub(
+        num_t& lhs,
+        const_num_t const& rhs
+    ) noexcept -> num_t::value_type {
+        auto const ls = lhs.is_neg();
+        auto const rs = rhs.is_neg();
+        // both are -ve or +ve
+        if (ls != rs) {
+            auto c = abs_add(lhs, rhs);
+            return c;
+        } else if (ls && rs) {
+            // out = -lhs - (-rhs) => -lhs + rhs
+            auto c = abs_sub<true>(lhs, rhs);
+            lhs.set_neg(c == 0);
+            return c;
+        } else {
+            // out = lhs - rhs
+            auto c = abs_sub<true>(lhs, rhs);
+            lhs.set_neg(c);
+            return c;
         }
     }
 
@@ -327,40 +404,46 @@ namespace big_num::internal {
         Integer& out,
         Integer const& lhs,
         Integer const& rhs
-    ) -> void {
-        if (lhs.is_neg() == rhs.is_neg()) {
-            abs_sub(out, lhs, rhs);
-        } else {
-            abs_add(out, lhs, rhs);
-        }
+    ) -> Integer::value_type {
+        auto const bits = std::max(lhs.bits(), rhs.bits());
+        out.resize(bits);
+
+        auto a = lhs.to_span();
+        auto b = rhs.to_span();
+        auto o = out.to_span();
+
+        auto c = sub(o, a, b);
+        out.set_neg(o.is_neg());
+        remove_trailing_zeros(out);
+        return c;
     }
 
     inline static constexpr auto inc(
-        std::span<Integer::value_type> lhs,
+        num_t lhs,
         Integer::value_type val = 1
-    ) -> Integer::value_type {
+    ) noexcept -> num_t::value_type {
         Integer::value_type c{val};
         auto i = 0zu;
         while (i < lhs.size() && c){
             auto r = lhs[i] + c;
             auto q = r & MachineConfig::mask;
             c = r >> MachineConfig::bits;
-            lhs[i++] = static_cast<Integer::value_type>(q);
+            lhs[i++] = static_cast<num_t::value_type>(q);
         }
         return c;
     }
 
     inline static constexpr auto dec(
-        std::span<Integer::value_type> lhs,
+        num_t lhs,
         Integer::value_type val = 1
-    ) -> Integer::value_type {
+    ) noexcept -> num_t::value_type {
         Integer::value_type c{val};
         auto i = 0zu;
         while (i < lhs.size() && c){
             auto r = lhs[i] - c;
             c = lhs[i] < c;
             auto q = r & MachineConfig::mask;
-            lhs[i++] = static_cast<Integer::value_type>(q);
+            lhs[i++] = static_cast<num_t::value_type>(q);
         }
         return c;
     }
