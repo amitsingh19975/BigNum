@@ -95,8 +95,7 @@ namespace big_num::internal {
         const_num_t const& rhs
     ) noexcept -> Integer::value_type {
         if (lhs.empty()) return {};
-        auto tmp_r = rhs;
-        tmp_r.trim_trailing_zeros();
+        auto tmp_r = rhs.trim_trailing_zeros();
 
         auto o = lhs.data();
         auto b = rhs.data();
@@ -186,8 +185,7 @@ namespace big_num::internal {
         num_t       lhs,
         const_num_t const& rhs
     ) noexcept -> Integer::value_type {
-        auto tmp_r = rhs;
-        tmp_r.trim_trailing_zeros();
+        auto tmp_r = rhs.trim_trailing_zeros();
 
         auto o = lhs.data();
         auto b = rhs.data();

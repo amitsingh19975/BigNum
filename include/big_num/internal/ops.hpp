@@ -8,6 +8,11 @@
 #include <type_traits>
 
 namespace big_num::internal {
+    inline static auto to_string(
+        const_num_t const& in,
+        std::uint8_t radix
+    ) -> std::string;
+
     inline static constexpr auto clone(Integer const& a) -> Integer {
         auto tmp = Integer{};
         tmp.resize(a.bits());
@@ -63,7 +68,10 @@ namespace big_num::internal {
         while (p) {
             if (p & 1) {
                 auto sz = res_size + self_size;
-                mul({ out.data(), sz }, { res.data(), res_size }, { self.data(), self_size });
+                auto lhs = NumberSpan(res.data(), res_size);
+                auto rhs = NumberSpan(self.data(), self_size);
+
+                mul(out.slice(0, sz), lhs, rhs);
                 res_size = sz;
                 for (auto i = 0zu; i < sz; ++i) {
                     res[i] = out[i];
@@ -71,7 +79,7 @@ namespace big_num::internal {
                 }
             }
             auto sz = self_size << 1;
-            square({ out.data(), sz }, { self.data(), self_size });
+            square(out.slice(0, sz), { self.data(), self_size });
             self_size = sz;
             for (auto i = 0zu; i < self_size; ++i) {
                 self[i] = out[i];

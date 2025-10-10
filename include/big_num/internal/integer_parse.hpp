@@ -83,7 +83,7 @@ namespace big_num::internal {
                 base[0] = Radix;
                 auto sb = NumberSpan(std::span(base));
                 pow(sb, { base.data(), 1 }, rhs.size());
-                sb.trim_trailing_zeros();
+                sb = sb.trim_trailing_zeros();
                 mul(out, snl, sb);
             }
             abs_add(out, snr);
@@ -309,8 +309,8 @@ namespace big_num::internal {
     // if radix is 0, we print the underlying representation.
     inline static auto to_string(
         const_num_t const& in,
-        std::uint8_t radix = 10,
-        IntegerStringConvConfig config = {}
+        std::uint8_t radix,
+        IntegerStringConvConfig config
     ) -> std::string {
         std::string res;
 
@@ -394,6 +394,13 @@ namespace big_num::internal {
         }
 
         return res;
+    }
+
+    inline static auto to_string(
+        const_num_t const& in,
+        std::uint8_t radix = 10
+    ) -> std::string {
+        return to_string(in, radix, IntegerStringConvConfig{});
     }
 } // big_num::internal
 

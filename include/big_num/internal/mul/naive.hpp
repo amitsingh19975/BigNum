@@ -175,10 +175,8 @@ namespace big_num::internal {
 
         using val_t = MachineConfig::uint_t;
 
-        auto a = lhs;
-        auto b = rhs;
-        a.trim_trailing_zeros();
-        b.trim_trailing_zeros();
+        auto a = lhs.trim_trailing_zeros();
+        auto b = rhs.trim_trailing_zeros();
 
         if (a.size() < 2) {
             naive_mul(out, b, a.data()[0]);
@@ -261,8 +259,8 @@ namespace big_num::internal {
         Integer const& lhs,
         Integer const& rhs
     ) -> void {
-        out.resize(lhs.size() + rhs.size());
-        out.set_neg(static_cast<bool>(lhs.is_neg() ^ rhs.is_neg()));
+        out.resize(lhs.bits() + rhs.bits() + 1);
+        out.set_neg(static_cast<bool>(lhs.is_neg() != rhs.is_neg()));
         auto o = out.to_span();
         if (lhs.size() < 2) {
             naive_mul(o, rhs.to_span(), lhs.data()[0]);
@@ -277,7 +275,7 @@ namespace big_num::internal {
         Integer& out,
         Integer const& lhs
     ) -> void {
-        out.resize(lhs.size() + MachineConfig::bits);
+        out.resize(lhs.bits() + MachineConfig::bits);
         out.set_neg(lhs.is_neg());
         naive_mul<R>(out.to_span(), lhs.to_span());
         out.remove_trailing_empty_blocks();

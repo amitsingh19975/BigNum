@@ -55,6 +55,12 @@ namespace big_num::internal {
             return num + (num & 1);
         }
 
+        static constexpr auto next_multiple(std::size_t num, std::size_t m) noexcept -> std::size_t {
+            // A = k * Q + r
+            // A - r = k * Q
+            if (num % m == 0) return num;
+            return num + (m - num % m);
+        }
 
         #ifndef BIG_NUM_NAIVE_MUL_THRESHOLD
         static constexpr std::size_t naive_mul_threshold = 32zu;

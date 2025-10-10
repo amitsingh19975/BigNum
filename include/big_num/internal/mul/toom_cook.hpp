@@ -126,17 +126,17 @@ namespace big_num::internal {
             r_1 = NumberSpan(std::span(r_1_buf));
             r_inf = NumberSpan(std::span(r_inf_buf));
 
-            l_n2.trim_trailing_zeros();
-            l_n1.trim_trailing_zeros();
-            l_0.trim_trailing_zeros();
-            l_1.trim_trailing_zeros();
-            l_inf.trim_trailing_zeros();
+            l_n2 = l_n2.trim_trailing_zeros();
+            l_n1 = l_n1.trim_trailing_zeros();
+            l_0 = l_0.trim_trailing_zeros();
+            l_1 = l_1.trim_trailing_zeros();
+            l_inf = l_inf.trim_trailing_zeros();
 
-            r_n2.trim_trailing_zeros();
-            r_n1.trim_trailing_zeros();
-            r_0.trim_trailing_zeros();
-            r_1.trim_trailing_zeros();
-            r_inf.trim_trailing_zeros();
+            r_n2 = r_n2.trim_trailing_zeros();
+            r_n1 = r_n1.trim_trailing_zeros();
+            r_0 = r_0.trim_trailing_zeros();
+            r_1 = r_1.trim_trailing_zeros();
+            r_inf = r_inf.trim_trailing_zeros();
 
             auto sn2 = std::max(l_n2.size(), r_n2.size());
             auto sn1 = std::max(l_n1.size(), r_n1.size());
@@ -166,9 +166,7 @@ namespace big_num::internal {
                 l_n2, r_n2,
                 sn2
             );
-            o_n2.set_neg(l_n2.is_neg() ^ r_n2.is_neg());
-            // std::println("ON2: {}", o_n2);
-            // exit(0);
+            o_n2.set_neg(l_n2.is_neg() != r_n2.is_neg());
 
             // out(-1) = l_n1 * r_n1
             toom_cook_3_helper<NaiveThreshold>(
@@ -176,7 +174,7 @@ namespace big_num::internal {
                 l_n1, r_n1,
                 sn1
             );
-            o_n1.set_neg(l_n1.is_neg() ^ r_n1.is_neg());
+            o_n1.set_neg(l_n1.is_neg() != r_n1.is_neg());
 
             // out(0) = l_0 * r_0
             toom_cook_3_helper<NaiveThreshold>(
@@ -184,7 +182,7 @@ namespace big_num::internal {
                 l_0, r_0,
                 s0
             );
-            o_0.set_neg(l_0.is_neg() ^ r_0.is_neg());
+            o_0.set_neg(l_0.is_neg() != r_0.is_neg());
 
             // out(1) = l_1 * r_1
             toom_cook_3_helper<NaiveThreshold>(
@@ -192,7 +190,7 @@ namespace big_num::internal {
                 l_1, r_1,
                 s1
             );
-            o_1.set_neg(l_1.is_neg() ^ r_1.is_neg());
+            o_1.set_neg(l_1.is_neg() != r_1.is_neg());
 
             // out(inf) = l_inf * r_inf
             toom_cook_3_helper<NaiveThreshold>(
@@ -200,7 +198,7 @@ namespace big_num::internal {
                 l_inf, r_inf,
                 sinf
             );
-            o_inf.set_neg(l_inf.is_neg() ^ r_inf.is_neg());
+            o_inf.set_neg(l_inf.is_neg() != r_inf.is_neg());
 
             BIG_NUM_TRACE(std::println("on2: {}\non1: {}\no0: {}\no1: {}\noinf: {}\n", o_n2, o_n1, o_0, o_1, o_inf));
 
@@ -257,7 +255,7 @@ namespace big_num::internal {
             add(out2, o2);
             add(out3, o3);
             add(out4, o4);
-            BIG_NUM_TRACE(std::println("O: {}", out));
+            BIG_NUM_TRACE(std::println("O: {}\n\n", out));
         }
     } // namespace detail
 
@@ -269,8 +267,9 @@ namespace big_num::internal {
         std::pmr::memory_resource* resource = std::pmr::get_default_resource()
     ) -> void {
         using uint_t = MachineConfig::uint_t;
+
         auto sz = std::max(lhs.size(), rhs.size());
-        sz += 3 - sz % 3; // round up to 3
+        sz = MachineConfig::next_multiple(sz, 3); // round up to 3
 
         auto res = out;
 
@@ -294,7 +293,7 @@ namespace big_num::internal {
             tb = { b, false };
         }
 
-        detail::toom_cook_3_helper<NaiveThreshold + (3 - NaiveThreshold % 3)>(
+        detail::toom_cook_3_helper<MachineConfig::next_multiple(NaiveThreshold, 3)>(
             res,
             ta, tb,
             sz
@@ -314,7 +313,7 @@ namespace big_num::internal {
         std::pmr::memory_resource* resource = std::pmr::get_default_resource()
     ) -> void {
         auto sz = std::max(lhs.size(), rhs.size());
-        sz += 3 - sz % 3; // round up to 3
+        sz = MachineConfig::next_multiple(sz, 3); // round up to 3
         out.resize((sz << 1) * MachineConfig::bits);
 
         auto a = std::pmr::vector<Integer::value_type>{sz, 0, resource};
@@ -329,7 +328,7 @@ namespace big_num::internal {
             tb = { b, false };
         }
 
-        detail::toom_cook_3_helper<NaiveThreshold + (3 - NaiveThreshold % 3)>(
+        detail::toom_cook_3_helper<MachineConfig::next_multiple(NaiveThreshold, 3)>(
             out,
             ta, tb,
             sz

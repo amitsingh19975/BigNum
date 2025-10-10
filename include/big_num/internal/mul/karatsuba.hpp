@@ -93,9 +93,9 @@ namespace big_num::internal {
             );
             BIG_NUM_TRACE(std::println("=========== End ==========="));
 
-            z0.trim_trailing_zeros();
-            z2.trim_trailing_zeros();
-            z3.trim_trailing_zeros();
+            z0 = z0.trim_trailing_zeros();
+            z2 = z2.trim_trailing_zeros();
+            z3 = z3.trim_trailing_zeros();
 
             BIG_NUM_TRACE(std::println("z0: {}\nz2: {}\nz3: {}", z0, z2, z3));
 

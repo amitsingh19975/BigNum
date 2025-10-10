@@ -115,12 +115,14 @@ namespace big_num::internal {
         constexpr auto operator[](size_type k) noexcept -> reference { return m_base[k]; }
         constexpr auto operator[](size_type k) const noexcept -> const_reference { return m_base[k]; }
 
-        constexpr auto trim_trailing_zeros() noexcept -> void {
+        constexpr auto trim_trailing_zeros() const noexcept -> NumberSpan {
+            auto tmp = *this;
             auto i = size();
             for (; i > 0; --i) {
-                if (m_base[i - 1]) break;
+                if (tmp.m_base[i - 1]) break;
             }
-            m_base = { data(), i };
+            tmp.m_base = { tmp.data(), i };
+            return tmp;
         }
 
         constexpr auto slice(
