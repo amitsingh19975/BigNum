@@ -175,6 +175,7 @@ void parse_args(args_t& args) {
 		if (arg == "-c") return benchmark_parse(args);
 		if (arg == "-a") return benchmark_binary(args,[](auto& res, auto const& l, auto const& r) { add(res, l, r); });
 		if (arg == "-s") return benchmark_binary(args,[](auto& res, auto const& l, auto const& r) { sub(res, l, r); });
+		if (arg == "-m") return benchmark_binary(args,[](auto& res, auto const& l, auto const& r) { mul(res, l, r); });
 	}
 }
 

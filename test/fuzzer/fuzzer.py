@@ -99,6 +99,8 @@ def print_binary_success(a: str, b: str, op: str, time: str) -> None:
         o = '+'
     elif op == 's':
         o = '-'
+    elif op == 's':
+        o = '*'
     print(f"{t_a} {o} {t_b} -- \x1b[32mPASSED\x1b[0m\n\tTook {time}")
 
 PREFIX_LIST = ['0b', '0o', '0x']
@@ -221,8 +223,8 @@ def test_binary(max_len: int, op='a') -> None:
     len2 = 1
     seed("BigNum")
     while True:
-        len1 = randint(1, max_len)
-        len2 = randint(1, max_len)
+        len1 += 100 #randint(1, max_len)
+        len2 += 100 #randint(1, max_len)
         print(f"Testing for number that has length: {len1=}, {len2=}")
         
         # num = random_number(2, len)
@@ -244,6 +246,8 @@ def test_binary(max_len: int, op='a') -> None:
             ans = str(na + nb)
         elif op == 's':
             ans = str(na - nb)
+        elif op == 'm':
+            ans = str(na * nb)
         if not test_binary_helper(path, a, b, ans, op):
             break
 
@@ -255,7 +259,7 @@ def test_binary(max_len: int, op='a') -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="Fuzzer")
     parser.add_argument('-c', '--parse', action=argparse.BooleanOptionalAction, help="Fuzzy test integer parsing.");
-    parser.add_argument('-b', '--binary', help="Fuzzy test binary operation.", choices=['a', 's']);
+    parser.add_argument('-b', '--binary', help="Fuzzy test binary operation.", choices=['a', 's', 'm']);
 
     return parser.parse_args();
 
