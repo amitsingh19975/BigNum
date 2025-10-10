@@ -39,16 +39,16 @@ namespace big_num::internal {
 
             BIG_NUM_TRACE(std::println("size: {}, half: {}, low: {}, high: {}", size, half, low, high));
 
-            auto xl = lhs.slice(0, low).abs();
-            auto xu = lhs.slice(low).abs();
-            auto yl = rhs.slice(0, low).abs();
-            auto yu = rhs.slice(low).abs();
+            auto xl = lhs.slice(0, low);
+            auto xu = lhs.slice(low);
+            auto yl = rhs.slice(0, low);
+            auto yu = rhs.slice(low);
 
             auto sum_sz = std::max(low, high) + 1;
             auto x_sum = std::pmr::vector<uint_t>{sum_sz, 0, resource};
             auto y_sum = std::pmr::vector<uint_t>{sum_sz, 0, resource};
 
-            auto const sz = size;
+            auto const sz = size + 1;
             auto z0_buff = std::pmr::vector<uint_t>{sz, 0, resource};
             auto z2_buff = std::pmr::vector<uint_t>{sz, 0, resource};
             auto z3_buff = std::pmr::vector<uint_t>{sz, 0, resource};
@@ -73,7 +73,7 @@ namespace big_num::internal {
                 z0,
                 xl,
                 yl,
-                xl.size()
+                std::max(xl.size(), yl.size())
             );
 
             BIG_NUM_TRACE(std::println("======= Z2 = xu * yu ========="));
@@ -81,7 +81,7 @@ namespace big_num::internal {
                 z2,
                 xu,
                 yu,
-                xu.size()
+                std::max(xu.size(), yu.size())
             );
 
             BIG_NUM_TRACE(std::println("======= Z3 = x_sum * y_sum ========="));
@@ -147,7 +147,7 @@ namespace big_num::internal {
         );
 
         out.set_neg(lhs.is_neg() != rhs.is_neg());
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
     template <std::size_t NaiveThreshold = MachineConfig::naive_mul_threshold>

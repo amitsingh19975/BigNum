@@ -6,7 +6,6 @@
 #include <limits>
 #include <span>
 #include <type_traits>
-#include <utility>
 
 namespace big_num::internal {
 

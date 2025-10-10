@@ -230,6 +230,51 @@ namespace big_num::internal {
         constexpr operator NumberSpan<const value_type>() const noexcept {
             return to_span();
         }
+
+        constexpr auto remove_trailing_empty_blocks() -> void {
+            if (empty()) return;
+            auto sz = size();
+            auto ptr = data();
+            for (auto i = sz; i > 0; --i) {
+                auto j = i - 1;
+                auto n = ptr[j];
+                if (n) {
+                    auto last_bits = static_cast<std::size_t>(std::bit_width(n));
+                    auto const bits = j * MachineConfig::bits + last_bits;
+                    resize(bits);
+                    shrink_to_fit();
+                    return;
+                }
+            }
+            resize(0);
+            shrink_to_fit();
+        }
+
+        constexpr auto remove_leading_empty_blocks() -> void {
+            if (empty()) return;
+            auto sz = size();
+            auto ptr = data();
+            auto i = 0ul;
+            for (; i < sz; ++i) {
+                if (ptr[i]) break;
+            }
+            if (i == sz) {
+                resize(0);
+                shrink_to_fit();
+                return;
+            }
+
+            auto new_size = sz - i;
+            std::copy_n(ptr + i, new_size, ptr);
+            auto last_bits = static_cast<std::size_t>(std::bit_width(ptr[new_size - 1]));
+            auto const bits = (new_size - 1) * MachineConfig::bits + last_bits;
+            resize(bits);
+            shrink_to_fit();
+        }
+
+        constexpr auto fix_bits_required() -> void {
+            resize(detail::calculate_bits_required(to_span().span()));
+        }
     };
 } // big_num::internal
 

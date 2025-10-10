@@ -2,6 +2,10 @@
 #define AMT_BIG_NUM_INTERNAL_INTEGER_PARSE_HPP
 
 #include "base.hpp"
+#include "add_sub.hpp"
+#include "mul/mul.hpp"
+#include "ops.hpp"
+#include "logical_bitwise.hpp"
 #include "number_span.hpp"
 #include "utils.hpp"
 #include "integer.hpp"
@@ -18,66 +22,6 @@
 #include <vector>
 
 namespace big_num::internal {
-
-    inline static constexpr auto remove_trailing_zeros(
-        std::pmr::vector<std::uint8_t>& v
-    ) noexcept -> void {
-        auto it = std::find_if_not(v.rbegin(), v.rend(), [](auto el) {
-            return el == 0;
-        });
-        auto sz = v.size() - static_cast<std::size_t>(std::distance(v.rbegin(), it));
-        v.resize(sz);
-    }
-
-    inline static constexpr auto fix_bits_required(Integer& v) noexcept -> void {
-        v.resize(detail::calculate_bits_required(v));
-    }
-
-    inline static constexpr auto remove_trailing_zeros(
-        Integer& v
-    ) -> void {
-        if (v.empty()) return;
-        auto sz = v.size();
-        auto ptr = v.data();
-        for (auto i = sz; i > 0; --i) {
-            auto j = i - 1;
-            auto n = ptr[j];
-            if (n) {
-                auto last_bits = static_cast<std::size_t>(std::bit_width(n));
-                auto const bits = j * MachineConfig::bits + last_bits;
-                v.resize(bits);
-                v.shrink_to_fit();
-                return;
-            }
-        }
-        v.resize(0);
-        v.shrink_to_fit();
-    }
-
-    inline static constexpr auto remove_leading_zeros(
-        Integer& v
-    ) -> void {
-        if (v.empty()) return;
-        auto sz = v.size();
-        auto ptr = v.data();
-        auto i = 0ul;
-        for (; i < sz; ++i) {
-            if (ptr[i]) break;
-        }
-        if (i == sz) {
-            v.resize(0);
-            v.shrink_to_fit();
-            return;
-        }
-
-        auto new_size = sz - i;
-        std::copy_n(ptr + i, new_size, ptr);
-        auto last_bits = static_cast<std::size_t>(std::bit_width(ptr[new_size - 1]));
-        auto const bits = (new_size - 1) * MachineConfig::bits + last_bits;
-        v.resize(bits);
-        v.shrink_to_fit();
-    }
-
     namespace detail {
         template <std::size_t Radix>
         inline static constexpr auto parse_integer_to_block_slow(
@@ -101,24 +45,48 @@ namespace big_num::internal {
         }
 
         template <std::size_t Radix>
+            requires (Radix > 0)
         inline static constexpr auto parse_integer_to_block(
-            std::span<MachineConfig::uint_t> out,
+            num_t& out,
             std::span<std::uint8_t> in,
             std::pmr::memory_resource* resource = std::pmr::get_default_resource()
         ) noexcept -> void {
-            (void)resource;
-            // auto const size = in.size();
+            auto const size = in.size();
+            using val_t = num_t::value_type;
             // if (size <= MachineConfig::parse_naive_threshold) {
                 parse_integer_to_block_slow<Radix>(out, in);
-            //     return;
+                return;
             // }
 
-            // auto const mid = size >> 1;
-            //
-            // auto lhs = std::span(in.data(), mid);
-            // auto rhs = std::span(in.data() + mid, size - mid);
-            //
-            // auto olhs = std::span();
+            auto const mid = size >> 1;
+
+            auto lhs = std::span(in.data(), mid);
+            auto rhs = std::span(in.data() + mid, in.size() - mid);
+
+            auto nl = std::pmr::vector<val_t>{lhs.size(), 0, resource};
+            auto nr = std::pmr::vector<val_t>{rhs.size(), 0, resource};
+
+            auto snl = NumberSpan(std::span(nl));
+            auto snr = NumberSpan(std::span(nr));
+
+            parse_integer_to_block<Radix>(snl, lhs, resource);
+            parse_integer_to_block<Radix>(snr, rhs, resource);
+
+            constexpr auto bits = static_cast<std::size_t>(std::bit_width(Radix));
+            if constexpr ((Radix & (Radix - 1)) == 0) {
+                snl = NumberSpan(nl.data(), nl.size());
+                std::copy(snl.begin(), snl.end(), out.begin());
+                shift_left<bits - 1>(out);
+            } else {
+                auto const blocks = MachineConfig::size(bits) * rhs.size() * 2;
+                std::pmr::vector<val_t> base(blocks, resource);
+                base[0] = Radix;
+                auto sb = NumberSpan(std::span(base));
+                pow(sb, { base.data(), 1 }, rhs.size());
+                sb.trim_trailing_zeros();
+                mul(out, snl, sb);
+            }
+            abs_add(out, snr);
         }
 
         inline static constexpr auto normalize_string(std::string_view num, std::string& buf) -> std::string_view {
@@ -248,22 +216,23 @@ namespace big_num::internal {
         out.resize(tmp.size() * MachineConfig::bits);
         out.fill(0);
 
+        auto o = out.to_span();
         switch (radix_hint) {
             case 2: {
-                detail::parse_integer_to_block<2>(out, tmp);
+                detail::parse_integer_to_block<2>(o, tmp);
             } break;
             case 8: {
-                detail::parse_integer_to_block<8>(out, tmp);
+                detail::parse_integer_to_block<8>(o, tmp);
             } break;
             case 10: {
-                detail::parse_integer_to_block<10>(out, tmp);
+                detail::parse_integer_to_block<10>(o, tmp);
             } break;
             case 16: {
-                detail::parse_integer_to_block<16>(out, tmp);
+                detail::parse_integer_to_block<16>(o, tmp);
             } break;
         }
 
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
         return {};
     }
 
@@ -303,7 +272,7 @@ namespace big_num::internal {
             ptr[j++] = q;
         }
 
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
     namespace detail {

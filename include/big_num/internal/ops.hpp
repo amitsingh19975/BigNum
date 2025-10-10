@@ -2,7 +2,6 @@
 #define AMT_BIG_NUM_INTERNAL_OPS_HPP
 
 #include "base.hpp"
-#include "integer_parse.hpp"
 #include "mul/mul.hpp"
 #include "integer.hpp"
 #include <memory_resource>
@@ -36,8 +35,8 @@ namespace big_num::internal {
     template <std::integral T>
         requires std::is_unsigned_v<T>
     inline static constexpr auto pow(
-        std::span<Integer::value_type> out,
-        std::span<Integer::value_type const> a,
+        num_t out,
+        const_num_t const& a,
         T p,
         std::pmr::memory_resource* resource = std::pmr::get_default_resource()
     ) -> void {
@@ -46,6 +45,7 @@ namespace big_num::internal {
             out[0] = 1;
             return;
         } else if (p == 1) {
+            if (out.data() == a.data()) return;
             std::copy(a.begin(), a.end(), out.begin());
             return;
         }
@@ -101,7 +101,7 @@ namespace big_num::internal {
         auto const bits = detail::pow_cal_size(size * 2, p) * MachineConfig::bits;
         out.resize<false>(bits);
         pow(out.to_span(), { out.data(), size }, p, resource);
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
     template <std::integral T>

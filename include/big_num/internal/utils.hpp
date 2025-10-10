@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string_view>
 #include <cctype>
+#include <vector>
 
 namespace big_num::internal {
 
@@ -93,6 +94,15 @@ namespace big_num::internal {
         return num;
     }
 
+    inline static constexpr auto remove_trailing_zeros(
+        std::pmr::vector<std::uint8_t>& v
+    ) noexcept -> void {
+        auto it = std::find_if_not(v.rbegin(), v.rend(), [](auto el) {
+            return el == 0;
+        });
+        auto sz = v.size() - static_cast<std::size_t>(std::distance(v.rbegin(), it));
+        v.resize(sz);
+    }
 } // big_num::internal
 
 #endif // AMT_BIG_NUM_INTERNAL_UTILS_HPP

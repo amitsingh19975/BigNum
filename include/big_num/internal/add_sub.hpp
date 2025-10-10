@@ -2,9 +2,7 @@
 #define AMT_BIG_NUM_INTERNAL_ADD_SUB_HPP
 
 #include "base.hpp"
-#include "big_num/internal/logical_bitwise.hpp"
-#include "cmp.hpp"
-#include "integer_parse.hpp"
+#include "logical_bitwise.hpp"
 #include "integer.hpp"
 #include "ui.hpp"
 #include <cstddef>
@@ -180,7 +178,7 @@ namespace big_num::internal {
         std::copy(a.begin(), a.end(), o.begin());
         abs_add(o, b);
 
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
     template <bool Take2sComplement = false>
@@ -188,9 +186,9 @@ namespace big_num::internal {
         num_t       lhs,
         const_num_t const& rhs
     ) noexcept -> Integer::value_type {
-        // lhs.trim_trailing_zeros();
         auto tmp_r = rhs;
         tmp_r.trim_trailing_zeros();
+
         auto o = lhs.data();
         auto b = rhs.data();
         auto osz = lhs.size();
@@ -272,7 +270,7 @@ namespace big_num::internal {
         }
         auto c = abs_sub<Take2sComplement>(o, b);
 
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
         return c;
     }
 
@@ -349,7 +347,7 @@ namespace big_num::internal {
         // lhs <= rhs
         auto c = add(o, a, b);
         out.set_neg(o.is_neg());
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
         return c;
     }
 
@@ -417,7 +415,7 @@ namespace big_num::internal {
 
         auto c = sub(o, a, b);
         out.set_neg(o.is_neg());
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
         return c;
     }
 

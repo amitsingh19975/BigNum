@@ -2,7 +2,6 @@
 #define AMT_BIG_NUM_INTERNAL_LOGICAL_BITWISE_HPP
 
 #include "base.hpp"
-#include "integer_parse.hpp"
 #include "number_span.hpp"
 #include "integer.hpp"
 #include "ui.hpp"
@@ -402,7 +401,7 @@ namespace big_num::internal {
         }
         auto t = shift_right<Count>(out.to_span());
         out.resize(t.size() * MachineConfig::bits);
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
     template <std::size_t Count>
@@ -417,7 +416,7 @@ namespace big_num::internal {
         }
         out.resize(bits);
         shift_right<Count>(out.to_span(), in.to_span());
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
     inline static constexpr auto shift_right(
@@ -430,7 +429,7 @@ namespace big_num::internal {
         }
         auto t = shift_right(out.to_span(), count);
         out.resize(t.size() * MachineConfig::bits);
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
     inline static constexpr auto shift_right(
@@ -445,7 +444,7 @@ namespace big_num::internal {
         }
         out.resize(bits);
         shift_right(out.to_span(), in.to_span(), count);
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
     template <std::size_t Count>
@@ -630,7 +629,7 @@ namespace big_num::internal {
             out.resize(out.bits() + count);
         }
         auto mbits = shift_left(out.to_span(), count);
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
         return mbits;
     }
 
@@ -641,7 +640,7 @@ namespace big_num::internal {
     ) -> Integer::value_type {
         out.resize(in.bits() + count);
         auto mbits = shift_left(out.to_span(), in.to_span(), count);
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
         return mbits;
     }
 
@@ -653,7 +652,7 @@ namespace big_num::internal {
             out.resize(out.bits() + Count);
         }
         auto mbits = shift_left<Count>(out.to_span());
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
         return mbits;
     }
 
@@ -759,7 +758,7 @@ namespace big_num::internal {
         Integer& out
     ) noexcept -> void {
         ones_complement(out.to_span());
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
     inline static constexpr auto ones_complement(
@@ -768,14 +767,14 @@ namespace big_num::internal {
     ) noexcept -> void {
         out.resize(in.bits());
         ones_complement(out.to_span(), in.to_span());
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
     inline static constexpr auto twos_complement(
         Integer& out
     ) noexcept -> void {
         twos_complement(out.to_span());
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
     inline static constexpr auto twos_complement(
@@ -784,7 +783,7 @@ namespace big_num::internal {
     ) noexcept -> void {
         out.resize(in.bits());
         twos_complement(out.to_span(), in.to_span());
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 } // namespace big_num::internal
 

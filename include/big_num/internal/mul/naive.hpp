@@ -3,7 +3,6 @@
 
 #include "../add_sub.hpp"
 #include "../base.hpp"
-#include "../integer_parse.hpp"
 #include "../logical_bitwise.hpp"
 #include "ui.hpp"
 #include <bit>
@@ -100,18 +99,22 @@ namespace big_num::internal {
         out.copy_sign(lhs);
 
         if (rhs & (rhs - 1)) {
-            auto [res, c] = mul_impl<MachineConfig::bits>(lhs[0], rhs);
-            out[0] = res;
-
-            auto i = 1zu;
-            for (; i < lhs.size(); ++i) {
+            for (auto i = 0zu; i < lhs.size(); ++i) {
                 auto l = lhs[i];
-                auto [v, tc] = abs_add(l, c);
-                out[i] = v;
-                c = tc;
-            }
+                auto r = rhs;
 
-            out[i] = static_cast<Integer::value_type>(c);
+                auto [res, mc] = mul_impl<MachineConfig::bits>(l, r);
+                auto [s, c] = abs_add(out[i], res); 
+                out[i] = s;
+                c += mc;
+
+                auto k = i + 1;
+                while (k < out.size() && c) {
+                    auto [v, tc] = abs_add(out[k], c);
+                    c = tc;
+                    out[k++] = v;
+                }
+            }
         } else {
             if constexpr (!IsSameBuffer) {
                 std::copy(lhs.begin(), lhs.end(), out.begin());
@@ -131,18 +134,22 @@ namespace big_num::internal {
             out.copy_sign(lhs);
 
             if constexpr (R & (R - 1)) {
-                auto [res, c] = mul_impl<MachineConfig::bits>(lhs[0], R);
-                out[0] = res;
-
-                auto i = 1zu;
-                for (; i < lhs.size(); ++i) {
+                for (auto i = 0zu; i < lhs.size(); ++i) {
                     auto l = lhs[i];
-                    auto [v, tc] = abs_add(l, c);
-                    out[i] = v;
-                    c = tc;
-                }
+                    constexpr auto r = R;
 
-                out[i] = static_cast<Integer::value_type>(c);
+                    auto [res, mc] = mul_impl<MachineConfig::bits>(l, r);
+                    auto [s, c] = abs_add(out[i], res); 
+                    out[i] = s;
+                    c += mc;
+
+                    auto k = i + 1;
+                    while (k < out.size() && c) {
+                        auto [v, tc] = abs_add(out[k], c);
+                        c = tc;
+                        out[k++] = v;
+                    }
+                }
             } else {
                 if constexpr (!IsSameBuffer) {
                     std::copy(lhs.begin(), lhs.end(), out.begin());
@@ -168,30 +175,35 @@ namespace big_num::internal {
 
         using val_t = MachineConfig::uint_t;
 
-        if (lhs.size() < 2) {
-            naive_mul(out, rhs, lhs.data()[0]);
+        auto a = lhs;
+        auto b = rhs;
+        a.trim_trailing_zeros();
+        b.trim_trailing_zeros();
+
+        if (a.size() < 2) {
+            naive_mul(out, b, a.data()[0]);
             return;
-        } else if (rhs.size() < 2) {
-            naive_mul(out, lhs, rhs.data()[0]);
+        } else if (b.size() < 2) {
+            naive_mul(out, a, b.data()[0]);
             return;
         }
 
-        out.set_neg(lhs.is_neg() ^ rhs.is_neg());
+        out.set_neg(a.is_neg() ^ b.is_neg());
 
-        for (auto i = 0zu; i < lhs.size(); ++i) {
-            auto l = lhs[i];
+        for (auto i = 0zu; i < a.size(); ++i) {
+            auto l = a[i];
             auto c = val_t{};
 
-            for (auto j = 0zu; j < rhs.size(); ++j) {
+            for (auto j = 0zu; j < b.size(); ++j) {
                 auto o = out[i + j];
-                auto r = rhs[j];
+                auto r = b[j];
                 auto [m, mc] = mul_impl<MachineConfig::bits>(l, r);
                 auto [v, tc] = abs_add(o, m, c);
                 out[i + j] = v;
                 c = tc + mc;
             }
 
-            auto k = rhs.size() + i;
+            auto k = b.size() + i;
             while (k < out.size() && c) {
                 auto [v, tc] = abs_add(out[k], c);
                 c = tc;
@@ -257,7 +269,7 @@ namespace big_num::internal {
         } else {
             naive_mul(o, lhs.to_span(), rhs.data()[0]);
         }
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
     template <Integer::value_type R>
@@ -268,7 +280,7 @@ namespace big_num::internal {
         out.resize(lhs.size() + MachineConfig::bits);
         out.set_neg(lhs.is_neg());
         naive_mul<R>(out.to_span(), lhs.to_span());
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
     inline static constexpr auto naive_mul(
@@ -280,7 +292,7 @@ namespace big_num::internal {
         auto o = out.to_span();
         naive_mul(o, lhs.to_span(), rhs.to_span());
         out.set_neg(o.is_neg());
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
     inline static constexpr auto naive_square(
@@ -299,7 +311,7 @@ namespace big_num::internal {
         auto l = std::span(a.data(), a.size());
         auto o = out.to_span();
         naive_mul(o, { l }, { l });
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 
 } // namespace big_num::internal

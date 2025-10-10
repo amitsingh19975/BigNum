@@ -6,7 +6,6 @@
 #include "../logical_bitwise.hpp"
 #include "../cmp.hpp"
 #include "../add_sub.hpp"
-#include "../integer_parse.hpp"
 #include <bit>
 #include <span>
 
@@ -91,8 +90,8 @@ namespace big_num::internal {
 
         naive_div<false>(out_q.to_span(), out_r.to_span(), num.to_span(), den.to_span());
 
-        remove_trailing_zeros(out_q);
-        remove_trailing_zeros(out_r);
+        out_q.remove_trailing_empty_blocks();
+        out_r.remove_trailing_empty_blocks();
         return true;
     }
 
@@ -115,8 +114,7 @@ namespace big_num::internal {
         naive_div<false>(out_q.to_span(), out_r.to_span(), num.to_span(), den.to_span());
         out_r.destroy();
 
-        remove_trailing_zeros(out_q);
-
+        out_q.remove_trailing_empty_blocks();
         return true;
     }
 
@@ -213,8 +211,8 @@ namespace big_num::internal {
         auto r = naive_div<Den>(out_q.to_span(), num.to_span());
         out_r.data()[0] = r;
 
-        remove_trailing_zeros(out_q);
-        remove_trailing_zeros(out_r);
+        out_q.remove_trailing_empty_blocks();
+        out_r.remove_trailing_empty_blocks();
     }
 } // namespace big_num::internal
 

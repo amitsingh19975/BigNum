@@ -6,7 +6,6 @@
 #include "../div/naive.hpp"
 #include "../logical_bitwise.hpp"
 #include "../number_span.hpp"
-#include "big_num/internal/integer_parse.hpp"
 #include "naive.hpp"
 #include <algorithm>
 #include <memory_resource>
@@ -25,7 +24,7 @@ namespace big_num::internal {
         ) -> void {
             using uint_t = MachineConfig::uint_t;
             if (size <= NaiveThreshold) {
-                auto o = out.slice(0, size << 1).abs();
+                auto o = out;
                 auto l = lhs.slice(0, size);
                 auto r = rhs.slice(0, size);
                 naive_mul(o, l, r);
@@ -35,13 +34,13 @@ namespace big_num::internal {
             auto const lsz = size / 3;
             auto const mid = lsz * 2;
 
-            auto ll = lhs.slice(0, lsz).abs();
-            auto lm = lhs.slice(lsz, mid).abs();
-            auto lr = lhs.slice(mid).abs();
+            auto ll = lhs.slice(0, lsz);
+            auto lm = lhs.slice(lsz, mid);
+            auto lr = lhs.slice(mid);
 
-            auto rl = lhs.slice(0, lsz).abs();
-            auto rm = lhs.slice(lsz, mid).abs();
-            auto rr = lhs.slice(mid).abs();
+            auto rl = rhs.slice(0, lsz);
+            auto rm = rhs.slice(lsz, mid);
+            auto rr = rhs.slice(mid);
 
             BIG_NUM_TRACE(std::println("lsz: {}, mid: {}, high: {}", lsz, mid, size - mid));
             BIG_NUM_TRACE(std::println("ll: {}\nlm: {}\nlr: {}", ll, lm, lr));
@@ -144,11 +143,11 @@ namespace big_num::internal {
             auto s0 = std::max(l_0.size(), r_0.size());
             auto s1 = std::max(l_1.size(), r_1.size());
             auto sinf = std::max(l_inf.size(), r_inf.size());
-            auto o_n2_buf = int_t{sn2 << 1, 0, resource};
-            auto o_n1_buf = int_t{sn1 << 1, 0, resource};
-            auto o_0_buf = int_t{s0 << 1, 0, resource};
-            auto o_1_buf = int_t{s1 << 1, 0, resource};
-            auto o_inf_buf = int_t{sinf << 1, 0, resource};
+            auto o_n2_buf = int_t{sn2 * 2 + 1, 0, resource};
+            auto o_n1_buf = int_t{sn1 * 2 + 1, 0, resource};
+            auto o_0_buf = int_t{s0 * 2 + 1, 0, resource};
+            auto o_1_buf = int_t{s1 * 2 + 1, 0, resource};
+            auto o_inf_buf = int_t{sinf * 2 + 1, 0, resource};
 
             auto o_n2 =  NumberSpan(std::span(o_n2_buf));
             auto o_n1 =  NumberSpan(std::span(o_n1_buf));
@@ -203,27 +202,27 @@ namespace big_num::internal {
             );
             o_inf.set_neg(l_inf.is_neg() ^ r_inf.is_neg());
 
-            BIG_NUM_TRACE(std::println("on2: {}\non1: {}\no0: {}\no1: {}\noinf: {}", o_n2, o_n1, o_0, o_1, o_inf));
+            BIG_NUM_TRACE(std::println("on2: {}\non1: {}\no0: {}\no1: {}\noinf: {}\n", o_n2, o_n1, o_0, o_1, o_inf));
 
             // 1. o0 = o_0;
-            auto o0 = NumberSpan(std::span(o_0_buf));
+            auto o0 = NumberSpan(std::span(o_0_buf), o_0.is_neg());
             // 1. o4 = o_inf;
-            auto o4 = NumberSpan(std::span(o_inf_buf));
+            auto o4 = NumberSpan(std::span(o_inf_buf), o_inf.is_neg());
 
             // 3. o3 = (o_n2 - o_1) / 3
-            auto o3 = NumberSpan(std::span(o_n2_buf));
+            auto o3 = NumberSpan(std::span(o_n2_buf), o_n2.is_neg());
             sub(o3, o_1);
             naive_div<3>(o3);
             BIG_NUM_TRACE(std::println("3: {}", o3));
 
             // 4. o1 = (o_1 - o_n1) / 2
-            auto o1 = NumberSpan(std::span(o_1_buf));
+            auto o1 = NumberSpan(std::span(o_1_buf), o_1.is_neg());
             sub(o1, o_n1);
             naive_div<2>(o1);
             BIG_NUM_TRACE(std::println("4: {}", o1));
 
             // 5. o2 = o_n1 - o_0;
-            auto o2 = NumberSpan(std::span(o_n1_buf));
+            auto o2 = NumberSpan(std::span(o_n1_buf), o_n1.is_neg());
             sub(o2, o_0);
             BIG_NUM_TRACE(std::println("5: {}", o2));
 
@@ -336,7 +335,7 @@ namespace big_num::internal {
             sz
         );
         out.set_neg(lhs.is_neg() != rhs.is_neg());
-        remove_trailing_zeros(out);
+        out.remove_trailing_empty_blocks();
     }
 } // namespace big_num::internal
 
