@@ -17,7 +17,7 @@ namespace big_num::internal {
     ) noexcept -> void {
         auto lsz = lhs.size();
         auto rsz = rhs.size();
-        auto osz = std::max(lhs.bits(), rhs.bits());
+        auto osz = std::max(lsz, rsz);
         assert(out.size() >= osz);
 
         using simd_t = MachineConfig::simd_uint_t; 
@@ -27,11 +27,10 @@ namespace big_num::internal {
         auto b = rhs.data();
         auto o = out.data();
 
-        auto const nsz = std::min(lsz, rsz);
         auto i = std::size_t{};
 
         if (!std::is_constant_evaluated()) {
-            auto ssz = nsz - N;
+            auto ssz = osz - N;
             for (; i < ssz; i += N) {
                 auto l = simd_t::load(a + i, N);
                 auto r = simd_t::load(b + i, N);
@@ -40,7 +39,7 @@ namespace big_num::internal {
             }
         }
 
-        for (; i < nsz; ++i) {
+        for (; i < osz; ++i) {
             o[i] = a[i] & b[i];
         }
     }
