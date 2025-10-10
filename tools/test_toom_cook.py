@@ -1,13 +1,13 @@
 from basic import Internal
+import sys
+sys.set_int_max_str_digits(0)
 
 def helper(lhs: Internal, rhs: Internal, size: int, depth: int = 0) -> Internal:
-    if size <= 2:
+    if size <= 3:
         return lhs * rhs
 
     left_size = size // 3
     mid_size = left_size * 2
-
-
 
     ll = lhs[:left_size]
     lm = lhs[left_size:mid_size]
@@ -17,6 +17,7 @@ def helper(lhs: Internal, rhs: Internal, size: int, depth: int = 0) -> Internal:
     rm = rhs[left_size:mid_size]
     rr = rhs[mid_size:]
     # print(f"\n\n================= {depth} =================\n");
+    print(f"lsz: {left_size}, mid: {mid_size}, high: {size - mid_size}")
     print(f"ll: {repr(ll)}\nlm: {repr(lm)}\nlr: {repr(lr)}");
     print(f"rl: {repr(rl)}\nrm: {repr(rm)}\nrr: {repr(rr)}");
 
@@ -41,48 +42,54 @@ def helper(lhs: Internal, rhs: Internal, size: int, depth: int = 0) -> Internal:
         p_n2 = (p_n1 + m2) * 2 - m0
         p_inf = m2
 
+        p_0.trim()
+        p_1.trim()
+        p_n1.trim()
+        p_n2.trim()
+        p_inf.trim()
         return p_n2, p_n1, p_0, p_1, p_inf
 
     l_n2, l_n1, l_0, l_1, l_inf = eval(ll, lm, lr)
     r_n2, r_n1, r_0, r_1, r_inf = eval(rl, rm, rr)
 
-    ls = '' if l_n2.is_neg else '+'
-    rs = '' if r_n2.is_neg else '+'
-    print(f"\n\nln2: {ls}{repr(l_n2)}\nln1: {repr(l_n1)}\nl0: {repr(l_0)}\nl1: {repr(l_1)}\nl_inf: {repr(l_inf)}\n")
-    print(f"\n\nrn2: {rs}{repr(r_n2)}\nrn1: {repr(r_n1)}\nr0: {repr(r_0)}\nr1: {repr(r_1)}\nr_inf: {repr(r_inf)}\n")
+    print(f"\n\nln2: {repr(l_n2)}\nln1: {repr(l_n1)}\nl0: {repr(l_0)}\nl1: {repr(l_1)}\nl_inf: {repr(l_inf)}\n")
+    print(f"\n\nrn2: {repr(r_n2)}\nrn1: {repr(r_n1)}\nr0: {repr(r_0)}\nr1: {repr(r_1)}\nr_inf: {repr(r_inf)}\n")
 
     s1 = l_n2.is_neg
     s2 = r_n2.is_neg
-    o_n2 =  helper(l_n2, r_n2, left_size, depth + 1)
+    o_n2 =  helper(l_n2, r_n2, max(len(l_n2), len(r_n2)), depth + 1)
     o_n2.is_neg = s1 != s2
+    # print(f"ON2: {repr(o_n2)}")
+    # exit(0)
 
 
     s1 = l_n1.is_neg
     s2 = r_n1.is_neg
-    o_n1 =  helper(l_n1, r_n1, left_size, depth + 1)
+    o_n1 =  helper(l_n1, r_n1,  max(len(l_n1), len(r_n1)), depth + 1)
     o_n1.is_neg = s1 != s2
 
     s1 = l_0.is_neg
     s2 = r_0.is_neg
-    o_0 =   helper(l_0, r_0, left_size, depth + 1)
+    o_0 =   helper(l_0, r_0,  max(len(l_0), len(r_0)), depth + 1)
     o_0.is_neg = s1 != s2
 
     s1 = l_1.is_neg
     s2 = r_1.is_neg
-    o_1 =   helper(l_1, r_1, left_size, depth + 1)
+    o_1 =   helper(l_1, r_1,  max(len(l_1), len(r_1)), depth + 1)
     o_1.is_neg = s1 != s2
 
     s1 = l_inf.is_neg
     s2 = r_inf.is_neg
-    o_inf = helper(l_inf, r_inf, left_size, depth + 1)
+    o_inf = helper(l_inf, r_inf,  max(len(l_inf), len(r_inf)), depth + 1)
     o_inf.is_neg = s1 != s2
 
-    print("\non2: {}\non1: {}\no0: {}\no1: {}\noinf: {}\n".format(repr(o_n2), repr(o_n1), repr(o_0), repr(o_1), repr(o_inf)))
+    print("on2: {}\non1: {}\no0: {}\no1: {}\noinf: {}\n".format(repr(o_n2), repr(o_n1), repr(o_0), repr(o_1), repr(o_inf)))
 
     o0 = o_0
     o4 = o_inf
 
     o3 = (o_n2 - o_1) // 3
+    print(f"HERE: {repr(o_n2 - o_1)}")
     print(f"3: {repr(o3)}")
 
     o1 = (o_1 - o_n1) // 2
@@ -117,17 +124,19 @@ def helper(lhs: Internal, rhs: Internal, size: int, depth: int = 0) -> Internal:
     # print(f"\nTMP: {repr(o1)} + {repr(o0)} =>\n\t {repr(o1 + o0)}")
 
     out = o4 + o3 + o2 + o1 + o0
-    print(f"O: {repr(out)}")
+    print(f"O: {repr(out)}\n\n")
     return out
 
-a = 306148553827645126378519434018193318495011822711963727391209954020528493864535209911159790699446229795516566739272057174475304538951592019486676553726213677917762908009727837714458341572581842964938427
+a = 377068659343806964159165862667921978941026877128561357366515905088441453549435604442160635348341922985700347494565290814319507530833963194893548157405617919758601699558340303050451800679716184261940198278546942391767680873557242997215648706500249762574003897218201968540958044710064258814060660867510
+
+b = 24913189614749904270876232129580407147302049411048909502031932768273828375047266059612291702684258486382580977113006559349586327811982131724870051011833152490946434358505776463851069893253471362248582588362812657354552316246767024949601665239864 
 
 LHS = Internal(a)
-RHS = Internal(a)
+RHS = Internal(b)
 
 N = max(len(LHS), len(RHS));
 
-N = N + (3 - N % 3)
+N = N + (3 - N % 3) * (N % 3 != 0)
 while (len(LHS) < N):
     LHS.rep.append(0)
 
@@ -135,7 +144,7 @@ while (len(RHS) < N):
     RHS.rep.append(0)
 
 res = helper(LHS, RHS, N)
-assert(res.to_int() == a * a)
+assert(res.to_int() == a * b)
 print(f"{res=}\nRes: {res}")
 
 

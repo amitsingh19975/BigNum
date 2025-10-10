@@ -94,4 +94,16 @@ class Internal:
     def __len__(self) -> int:
         return len(self.rep)
 
+    def trim(self) -> None:
+        i = len(self.rep)
+        while i > 0:
+            if self.rep[i - 1] != 0:
+                break
+            i -= 1
+        if i == 0:
+            self.rep.clear()
+        else:
+            self.rep = self.rep[:i]
+
+
 

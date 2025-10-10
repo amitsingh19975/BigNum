@@ -64,7 +64,7 @@ def print_error(num: str, err: str) -> None:
         f.write(num)
     print(f"{t_num} -- \x1b[31mFAILED\x1b[0m\n\t{err}")
 
-def print_binary_error(a: str, b: str, ans: str, err: str) -> None:
+def print_binary_error(a: str, b: str, ans: str, op: str, err: str) -> None:
     t_a = a
     t_b = b
     if len(t_a) > 50:
@@ -77,7 +77,14 @@ def print_binary_error(a: str, b: str, ans: str, err: str) -> None:
         f.write(b)
         f.write('\n')
         f.write(ans)
-    print(f"{t_a} + {t_b} -- \x1b[31mFAILED\x1b[0m\n\t{err}")
+    o = op
+    if op == 'a':
+        o = '+'
+    elif op == 's':
+        o = '-'
+    elif op == 'm':
+        o = '*'
+    print(f"{t_a} {o} {t_b} -- \x1b[31mFAILED\x1b[0m\n\t{err}")
 
 def print_success(num: str, time: str) -> None:
     t_num = num
@@ -99,7 +106,7 @@ def print_binary_success(a: str, b: str, op: str, time: str) -> None:
         o = '+'
     elif op == 's':
         o = '-'
-    elif op == 's':
+    elif op == 'm':
         o = '*'
     print(f"{t_a} {o} {t_b} -- \x1b[32mPASSED\x1b[0m\n\tTook {time}")
 
@@ -172,18 +179,18 @@ def test_binary_helper(path: Path, a: str, b: str, ans: str, op: str, use_shared
 
     res = run_bin(path, args)
     if res.error:
-        print_binary_error(a, b, ans, res.error);
+        print_binary_error(a, b, ans, op, res.error);
         return False
 
     lines = read_lines()
     if (len(lines) < 2):
-        print_binary_error(a, b, ans, "Expected file to have number and time, but found invalid lines");
+        print_binary_error(a, b, ans, op, "Expected file to have number and time, but found invalid lines");
         return False
 
     out = lines[0].strip();
     time = lines[1];
     if (not compare_num(out, ans)):
-        print_binary_error(a, b, ans, "Mismatch input and output");
+        print_binary_error(a, b, ans, op, "Mismatch input and output");
         if (res.success and res.success.strip()):
             lines = res.success.splitlines()
             out = ''.join([f"\t> {line}\n" for line in lines])
@@ -223,8 +230,8 @@ def test_binary(max_len: int, op='a') -> None:
     len2 = 1
     seed("BigNum")
     while True:
-        len1 += 100 #randint(1, max_len)
-        len2 += 100 #randint(1, max_len)
+        len1 = randint(1, max_len)
+        len2 = randint(1, max_len)
         print(f"Testing for number that has length: {len1=}, {len2=}")
         
         # num = random_number(2, len)
