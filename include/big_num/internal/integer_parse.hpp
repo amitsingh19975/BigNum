@@ -45,7 +45,35 @@ namespace big_num::internal {
         }
 
         template <std::size_t Radix>
-            requires (Radix > 0)
+            requires ((Radix & (Radix - 1)) == 0)
+        inline static constexpr auto parse_integer_to_block(
+            num_t& out,
+            std::span<std::uint8_t> in,
+            [[maybe_unused]] std::pmr::memory_resource* resource
+        ) noexcept -> void {
+            using val_t = num_t::value_type;
+            auto c = val_t{};
+
+            constexpr auto pos = static_cast<val_t>(std::bit_width(Radix) - 1);
+
+            auto k = 0zu;
+            auto l = 0zu;
+
+            for (auto i = in.size(); i > 0; --i) {
+                auto v = static_cast<val_t>(in[i - 1]);
+                c |= v << l;
+                l += pos;
+                if (l >= MachineConfig::bits) {
+                    out[k++] = c & MachineConfig::mask;
+                    l -= MachineConfig::bits;
+                    c = v >> (pos - l);
+                }
+            }
+            if (c) out[k++] = c;
+        }
+
+        template <std::size_t Radix>
+            requires ((Radix & (Radix - 1)) != 0)
         inline static constexpr auto parse_integer_to_block(
             num_t& out,
             std::span<std::uint8_t> in,
@@ -219,16 +247,16 @@ namespace big_num::internal {
         auto o = out.to_span();
         switch (radix_hint) {
             case 2: {
-                detail::parse_integer_to_block<2>(o, tmp);
+                detail::parse_integer_to_block<2>(o, tmp, resource);
             } break;
             case 8: {
-                detail::parse_integer_to_block<8>(o, tmp);
+                detail::parse_integer_to_block<8>(o, tmp, resource);
             } break;
             case 10: {
-                detail::parse_integer_to_block<10>(o, tmp);
+                detail::parse_integer_to_block<10>(o, tmp, resource);
             } break;
             case 16: {
-                detail::parse_integer_to_block<16>(o, tmp);
+                detail::parse_integer_to_block<16>(o, tmp, resource);
             } break;
         }
 
