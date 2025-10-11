@@ -138,7 +138,7 @@ namespace big_num::internal {
         while (i < sz && carry) {
             auto l = o[i];
             auto [v, c] = abs_add(l, carry);
-            o[i] = v;
+            o[i++] = v;
             carry = c;
         }
 
