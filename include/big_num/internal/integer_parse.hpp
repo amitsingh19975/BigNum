@@ -53,10 +53,10 @@ namespace big_num::internal {
         ) noexcept -> void {
             auto const size = in.size();
             using val_t = num_t::value_type;
-            // if (size <= MachineConfig::parse_naive_threshold) {
+            if (size <= MachineConfig::parse_naive_threshold) {
                 parse_integer_to_block_slow<Radix>(out, in);
                 return;
-            // }
+            }
 
             auto const mid = size >> 1;
 

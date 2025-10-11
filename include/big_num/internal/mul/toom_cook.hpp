@@ -71,7 +71,9 @@ namespace big_num::internal {
             auto r_1 = NumberSpan(std::span(r_1_buf));
             auto r_inf = NumberSpan(std::span(r_inf_buf));
 
-            auto eval = [resource](
+            auto eval = [
+                pt = int_t{std::max({ ll.size(), lr.size(), rl.size(), rr.size() }) + 1, resource}
+            ](
                 std::span<Integer::value_type const> m0, // lower
                 std::span<Integer::value_type const> m1, // middle
                 std::span<Integer::value_type const> m2, // upper 
@@ -82,19 +84,21 @@ namespace big_num::internal {
                 int_t& p_0,   // p(0)
                 int_t& p_1,   // p(1)
                 int_t& p_inf  // p(inf)
-            ) -> void {
+            ) mutable -> void {
                 // 1. pt = m0 + m2;
-                auto pt = int_t{std::max(m0.size(), m2.size()) + 1, 0, resource};
+                // pt.resize(std::max(m0.size(), m2.size()) + 1);
+                std::fill(pt.begin(), pt.end(), 0);
+
                 auto spt = NumberSpan(std::span(pt));
                 add(spt, m0, m2);
-                // auto spt = sign;
+                BIG_NUM_TRACE(std::println("pt: {}", spt));
 
                 // 2. p(0) = m0
                 p_0.resize(m0.size());
                 std::copy(m0.begin(), m0.end(), p_0.begin());
 
                 // 3. p(1) = pt + m1
-                p_1.resize(std::max(pt.size(), m1.size()) + 1, 0);
+                p_1.resize(std::max(pt.size(), m1.size()) + 1);
                 auto sp1 = NumberSpan(std::span(p_1));
                 add(sp1, spt, m1);
 
