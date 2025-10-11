@@ -68,6 +68,7 @@ args_t init_args(int argc, char** argv) {
 }
 
 constexpr auto get_radix(std::string_view num) -> std::uint8_t {
+    if (num.starts_with('-') | num.starts_with('+')) num = num.substr(1);
 	if (num.starts_with("0b")) return 2;
 	if (num.starts_with("0o")) return 8;
 	if (num.starts_with("0x")) return 16;
