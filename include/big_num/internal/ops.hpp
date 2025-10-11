@@ -8,11 +8,6 @@
 #include <type_traits>
 
 namespace big_num::internal {
-    inline static auto to_string(
-        const_num_t const& in,
-        std::uint8_t radix
-    ) -> std::string;
-
     inline static constexpr auto clone(Integer const& a) -> Integer {
         auto tmp = Integer{};
         tmp.resize(a.bits());
