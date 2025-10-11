@@ -119,7 +119,7 @@ def compare_num(lhs: str, rhs: str) -> bool:
 
     lhs = lhs.lstrip('0')
     rhs = rhs.lstrip('0')
-    
+
     if len(lhs) != len(rhs):
         print(f"Mismatch Len: {len(lhs)} != {len(rhs)}")
         return False
@@ -208,53 +208,54 @@ def test_parse(max_len: int) -> None:
         len +=100 # randint(1, max_len)
         print(f"Testing for number that has length: {len}")
         
-        # num = random_number(2, len)
-        # if not test_parse_helper(path, num):
-        #     break
-        #
-        # num = random_number(8, len)
-        # if not test_parse_helper(path, num):
-        #     break
+        num = random_number(2, len)
+        if not test_parse_helper(path, num):
+            break
+
+        num = random_number(8, len)
+        if not test_parse_helper(path, num):
+            break
 
         num = random_number(10, len)
         if not test_parse_helper(path, num):
             break
 
-        # num = random_number(16, len)
-        # if not test_parse_helper(path, num):
-        #     break
+        num = random_number(16, len)
+        if not test_parse_helper(path, num):
+            break
+
+def to_string(n: int, base: int) -> str:
+    match base:
+        case 2: return bin(n)
+        case 8: return oct(n)
+        case 16: return hex(n)
+        case _: return str(n)
 
 def test_binary(max_len: int, op='a') -> None:
     path = get_bin_path()
     len1 = 1
     len2 = 1
+    base = 2
     seed("BigNum")
     while True:
-        len1 = randint(1, max_len)
-        len2 = randint(1, max_len)
+        len1 += 100 #randint(1, max_len)
+        len2 += 100 #randint(1, max_len)
         print(f"Testing for number that has length: {len1=}, {len2=}")
-        
-        # num = random_number(2, len)
-        # if not test_parse_helper(path, num):
-        #     break
-        #
-        # num = random_number(8, len)
-        # if not test_parse_helper(path, num):
-        #     break
 
         a_neg = True if randint(0, 10) > 5 else False
         b_neg = True if randint(0, 10) > 5 else False
-        a = random_number(10, len1, a_neg)
-        b = random_number(10, len2, b_neg)
-        ans = ''
-        na = int(a)
-        nb = int(b)
+        a = random_number(base, len1, a_neg)
+        b = random_number(base, len2, b_neg)
+        ans = 0
+        na = int(a, base)
+        nb = int(b, base)
         if op == 'a':
-            ans = str(na + nb)
+            ans = na + nb
         elif op == 's':
-            ans = str(na - nb)
+            ans = na - nb
         elif op == 'm':
-            ans = str(na * nb)
+            ans = na * nb
+        ans = to_string(ans, base)
         if not test_binary_helper(path, a, b, ans, op):
             break
 
