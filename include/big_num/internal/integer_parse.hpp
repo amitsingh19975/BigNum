@@ -76,7 +76,7 @@ namespace big_num::internal {
             if constexpr ((Radix & (Radix - 1)) == 0) {
                 snl = NumberSpan(nl.data(), nl.size());
                 std::copy(snl.begin(), snl.end(), out.begin());
-                shift_left<bits - 1>(out);
+                shift_left(out, (bits - 1) * rhs.size());
             } else {
                 auto const blocks = MachineConfig::size(bits) * rhs.size() * 2;
                 std::pmr::vector<val_t> base(blocks, resource);
@@ -278,7 +278,7 @@ namespace big_num::internal {
     namespace detail {
         template <std::size_t To>
             requires (To <= 16)
-        inline static constexpr auto convert_to_string(
+        inline static constexpr auto convert_to_string_slow(
             std::span<MachineConfig::uint_t const> in,
             std::span<char> out
         ) noexcept -> void {
@@ -297,6 +297,19 @@ namespace big_num::internal {
                 out_size = std::max(out_size, j);
             }
         }
+
+        template <std::size_t To>
+            requires (To <= 16)
+        inline static constexpr auto convert_to_string(
+            std::span<MachineConfig::uint_t const> in,
+            std::span<char> out
+        ) noexcept -> void {
+            // auto const size = in.size();
+            // if (size <= MachineConfig::parse_dc_threshold) {
+                convert_to_string_slow<To>(in, out);
+                // return;
+            // }
+        }
     } // namespace detail
 
     struct IntegerStringConvConfig {
@@ -309,8 +322,8 @@ namespace big_num::internal {
     // if radix is 0, we print the underlying representation.
     inline static auto to_string(
         const_num_t const& in,
-        std::uint8_t radix,
-        IntegerStringConvConfig config
+        std::uint8_t radix = 10,
+        IntegerStringConvConfig config = {}
     ) -> std::string {
         std::string res;
 
@@ -394,13 +407,6 @@ namespace big_num::internal {
         }
 
         return res;
-    }
-
-    inline static auto to_string(
-        const_num_t const& in,
-        std::uint8_t radix = 10
-    ) -> std::string {
-        return to_string(in, radix, IntegerStringConvConfig{});
     }
 } // big_num::internal
 
