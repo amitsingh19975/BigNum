@@ -299,15 +299,77 @@ namespace big_num::internal {
         }
 
         template <std::size_t To>
-            requires (To <= 16)
+            requires ((To & (To - 1)) == 0)
         inline static constexpr auto convert_to_string(
             std::span<MachineConfig::uint_t const> in,
-            std::span<char> out
+            std::span<char> out,
+            [[maybe_unused]] std::pmr::memory_resource* resource
+        ) noexcept -> void {
+            auto k = 0zu;
+            auto c = MachineConfig::uint_t{};
+
+            auto bits = 0zu;
+            constexpr auto required_bits = static_cast<std::size_t>(std::bit_width(To) - 1);
+            for (auto i = 0zu; i < in.size(); ++i) {
+                for (auto j = 0zu; j < MachineConfig::bits; ++j) {
+                    if constexpr (To == 2) {
+                        out[k++] |= (in[i] >> j) & 1;
+                    } else {
+                        c |= ((in[i] >> j) & 1) << bits;
+                        ++bits;
+                        if (bits == required_bits) {
+                            out[k++] = static_cast<char>(c);
+                            c = 0;
+                            bits = 0;
+                        }
+                    }
+                }
+            }
+
+            if (bits) {
+                out[k++] = static_cast<char>(c);
+            }
+        }
+
+        template <std::size_t To>
+            requires ((To & (To - 1)) != 0)
+        inline static constexpr auto convert_to_string(
+            std::span<MachineConfig::uint_t const> in,
+            std::span<char> out,
+            [[maybe_unused]] std::pmr::memory_resource* resource
         ) noexcept -> void {
             // auto const size = in.size();
-            // if (size <= MachineConfig::parse_dc_threshold) {
+            // if (size <= 2) {
                 convert_to_string_slow<To>(in, out);
-                // return;
+                return;
+            // }
+
+            // auto const mid = size >> 1;
+            //
+            // auto lhs = std::span(in.data(), mid);
+            // auto rhs = std::span(in.data() + mid, in.size() - mid);
+            //
+            // constexpr auto bits = static_cast<std::size_t>(std::bit_width(To));
+            //
+            // auto nl = std::pmr::vector<char>{lhs.size() * (MachineConfig::bits / bits) * 2, 0, resource};
+            // auto nr = std::pmr::vector<char>{rhs.size() * (MachineConfig::bits / bits) * 2, 0, resource};
+            //
+            // convert_to_string<To>(lhs, nl, resource);
+            // convert_to_string<To>(rhs, nr, resource);
+
+            // std::copy(nl.begin(), nl.end(), out.begin() + static_cast<std::ptrdiff_t>(rhs.size()));
+            // auto c = std::size_t{};
+            // auto i = 0zu;
+            // for (; i < rhs.size(); ++i) {
+            //     auto s = static_cast<std::size_t>(out[i]) + static_cast<std::size_t>(nr[i]) + c;
+            //     out[i] = static_cast<char>(s % To);
+            //     c = s / To;
+            // }
+            //
+            // while (i < out.size() && c) {
+            //     auto s = static_cast<std::size_t>(out[i]) + c;
+            //     out[i++] = static_cast<char>(s % To);
+            //     c = s / To;
             // }
         }
     } // namespace detail
@@ -323,7 +385,8 @@ namespace big_num::internal {
     inline static auto to_string(
         const_num_t const& in,
         std::uint8_t radix = 10,
-        IntegerStringConvConfig config = {}
+        IntegerStringConvConfig config = {},
+        std::pmr::memory_resource* resource = std::pmr::get_default_resource()
     ) -> std::string {
         std::string res;
 
@@ -371,21 +434,21 @@ namespace big_num::internal {
             case 2: {
                 if (config.group_size == 0) config.group_size = 8;
                 if (config.show_prefix) { res[start_index] = '0'; res[start_index + 1] = 'b'; }
-                detail::convert_to_string<2>(in, res_span);
+                detail::convert_to_string<2>(in, res_span, resource);
             } break;
             case 8: {
                 if (config.group_size == 0) config.group_size = 3;
                 if (config.show_prefix) { res[start_index] = '0'; res[start_index + 1] = 'o'; }
-                detail::convert_to_string<8>(in, res_span);
+                detail::convert_to_string<8>(in, res_span, resource);
             } break;
             case 10: {
                 if (config.group_size == 0) config.group_size = 3;
-                detail::convert_to_string<10>(in, res_span);
+                detail::convert_to_string<10>(in, res_span, resource);
             } break;
             case 16: {
                 if (config.group_size == 0) config.group_size = 4;
                 if (config.show_prefix) { res[start_index] = '0'; res[start_index + 1] = 'x'; }
-                detail::convert_to_string<16>(in, res_span);
+                detail::convert_to_string<16>(in, res_span, resource);
             } break;
             default: break;
         }
