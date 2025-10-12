@@ -5,6 +5,7 @@
 #include "number_span.hpp"
 #include "integer.hpp"
 #include "ui.hpp"
+#include <algorithm>
 #include <cstddef>
 #include <type_traits>
 
@@ -287,12 +288,11 @@ namespace big_num::internal {
 
         static constexpr auto blocks = Count / MachineConfig::bits;
         static constexpr auto rem = Count % MachineConfig::bits;
-        if (blocks >= out.size()) return;
+        if (blocks >= in.size()) return;
 
-        if constexpr (rem == 0) {
-            detail::move_blocks_right<blocks>(out);
-            return;
-        }
+        std::copy(in.begin() + static_cast<std::ptrdiff_t>(blocks), in.end(), out.begin());
+
+        if constexpr (rem == 0) return;
 
         static constexpr auto mask = (MachineConfig::uint_t{1} << rem) - 1;
 
@@ -358,36 +358,43 @@ namespace big_num::internal {
         std::span<Integer::value_type> out,
         std::span<Integer::value_type const> in,
         std::size_t count
-    ) noexcept -> void {
-        if (in.empty()) return;
+    ) noexcept -> Integer::value_type {
+        if (in.empty()) return {};
 
         // [a, b, c, d] => [b, c, d]
         auto const blocks = count / MachineConfig::bits;
-        if (blocks >= in.size()) {
+        auto const size = std::min(out.size(), in.size());
+
+        if (blocks >= size) {
             std::fill(out.begin(), out.end(), 0);
-            return;
+            return {};
         }
 
         auto const rem = count % MachineConfig::bits;
         if (rem == 0) {
             std::copy_n(
                 in.begin() + static_cast<std::ptrdiff_t>(blocks),
-                out.size() - blocks,
+                size - blocks,
                 out.begin()
             );
-            return;
+            return {};
         }
 
         auto const mask = (MachineConfig::uint_t{1} << rem) - 1;
 
-        for (auto i = 0zu; i < out.size() - 1; ++i) {
-            auto c = out[i];
-            auto n = out[i + 1];
+        auto const sz = size - blocks;
+
+        for (auto i = 0zu; i < sz - 1; ++i) {
+            auto c = in[i];
+            auto n = in[i + 1];
             auto r = c >> rem;
             auto m = ((n & mask) << (MachineConfig::bits - rem));
             out[i] = r | m;
         }
-        out.back() >>= rem;
+        auto const result = (out[sz - 1] & mask);
+        out[sz - 1] = in[sz - 1] >> rem;
+
+        return result;
     }
 
     template <std::size_t Count>
@@ -510,25 +517,33 @@ namespace big_num::internal {
         // [a, b, c, d] => [0, a, b, c, d]
 
         static constexpr auto blocks = Count / MachineConfig::bits;
-        if (blocks >= in.size()) return {};
+        auto const size = std::min(out.size(), in.size());
+
+        if (blocks >= in.size()) {
+            std::fill(out.begin(), out.end(), 0);
+            return {};
+        }
+
         std::fill_n(out.begin(), blocks, 0);
 
         static constexpr auto rem = Count % MachineConfig::bits;
         if constexpr (rem == 0) {
-            std::copy_n(in.begin(), in.size() - blocks, out.begin() + blocks);
+            std::copy_n(in.begin(), size - blocks, out.begin() + blocks);
             return {};
         }
 
         auto c = MachineConfig::uint_t{};
 
-        for (auto i = blocks; i < out.size(); ++i) {
-            auto e = out[i];
+        auto const last = in.back();
+
+        for (auto i = blocks; i < size; ++i) {
+            auto e = in[i];
             auto r = ((e << rem) | c) & MachineConfig::mask;
             c = (e >> (MachineConfig::bits - rem));
             out[i] = static_cast<MachineConfig::uint_t>(r);
         }
 
-        return in.back() >> rem;
+        return last >> rem;
     }
 
     inline static constexpr auto shift_left(
@@ -593,23 +608,25 @@ namespace big_num::internal {
         if (in.empty()) return {};
         // [a, b, c, d] => [0, a, b, c, d]
 
+        auto const size = std::min(out.size(), in.size());
+
         auto const blocks = count / MachineConfig::bits;
         if (blocks >= in.size()) return {};
-        
+
         std::fill_n(out.begin(), blocks, 0);
 
         auto const rem = count % MachineConfig::bits;
         if (rem == 0) {
             std::copy_n(
                 in.begin(),
-                in.size() - blocks,
+                size - blocks,
                 out.begin() + static_cast<std::ptrdiff_t>(blocks)
             );
             return {};
         }
 
         auto c = Integer::value_type{};
-        for (auto i = blocks; i < in.size(); ++i) {
+        for (auto i = blocks; i < size; ++i) {
             auto e = in[i];
             auto r = ((e << rem) | c) & MachineConfig::mask;
             c = (e >> (MachineConfig::bits - rem));

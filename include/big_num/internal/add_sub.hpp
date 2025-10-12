@@ -146,6 +146,22 @@ namespace big_num::internal {
     }
 
     inline static constexpr auto abs_add(
+        num_t lhs,
+        Integer::value_type rhs
+    ) noexcept -> Integer::value_type {
+        if (lhs.empty()) return {};
+        auto c = rhs;
+        auto i = 0zu;
+        while (i < lhs.size() && c) {
+            auto [v, tc] = abs_add(lhs[i], c);
+            lhs[i++] = tc;
+            c = tc;
+        }
+
+        return c;
+    }
+
+    inline static constexpr auto abs_add(
         num_t       out,
         const_num_t const& lhs,
         const_num_t const& rhs
@@ -160,6 +176,19 @@ namespace big_num::internal {
             std::copy(b.begin(), b.end(), o.begin());
             return abs_add(o, a);
         }
+    }
+
+    inline static constexpr auto abs_add(
+        num_t       out,
+        const_num_t const&  lhs,
+        Integer::value_type rhs
+    ) noexcept -> Integer::value_type {
+        auto a = lhs;
+        auto b = rhs;
+        auto o = out;
+
+        std::copy(a.begin(), a.end(), o.begin());
+        return abs_add(o, b);
     }
 
     inline static constexpr auto abs_add(
@@ -237,11 +266,39 @@ namespace big_num::internal {
         return carry;
     }
 
+    inline static constexpr auto abs_sub(
+        num_t lhs,
+        Integer::value_type rhs
+    ) noexcept -> Integer::value_type {
+        if (lhs.empty()) return {};
+        auto c = rhs;
+        auto i = 0zu;
+        while (i < lhs.size() && c) {
+            auto [v, tc] = abs_sub(lhs[i], c);
+            lhs[i++] = tc;
+            c = tc;
+        }
+
+        return c;
+    }
+
     template <bool Take2sComplement = false>
     inline static constexpr auto abs_sub(
         num_t       out,
         const_num_t const& lhs,
         const_num_t const& rhs
+    ) noexcept -> Integer::value_type {
+        if (lhs.data() != out.data()) {
+            std::copy(lhs.begin(), lhs.end(), out.begin());
+        }
+        return abs_sub<Take2sComplement>(out, rhs);
+    }
+
+    template <bool Take2sComplement = false>
+    inline static constexpr auto abs_sub(
+        num_t       out,
+        const_num_t const&  lhs,
+        Integer::value_type rhs
     ) noexcept -> Integer::value_type {
         if (lhs.data() != out.data()) {
             std::copy(lhs.begin(), lhs.end(), out.begin());
