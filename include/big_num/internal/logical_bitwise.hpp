@@ -463,14 +463,19 @@ namespace big_num::internal {
 
         static constexpr auto blocks = Count / MachineConfig::bits;
         if (blocks >= out.size()) return {};
+        auto result = blocks == 0 ? val_t{} : out[out.size() - blocks];
         std::copy(out.rbegin() + static_cast<std::ptrdiff_t>(blocks), out.rend(), out.rbegin());
         std::fill_n(out.begin(), blocks, 0);
 
         static constexpr auto rem = Count % MachineConfig::bits;
-        if constexpr (rem == 0) return {};
+        if constexpr (rem == 0) return result;
+
+        result = out.back();
 
         auto i = std::size_t{blocks};
         auto c = val_t{};
+
+        result &= (1 << rem) - 1;
 
         if (!std::is_constant_evaluated()) {
             using simd_t = MachineConfig::simd_uint_t; 
@@ -504,7 +509,7 @@ namespace big_num::internal {
             out[i] = static_cast<MachineConfig::uint_t>(r);
         }
 
-        return c;
+        return result;
     }
 
     template <std::size_t Count>
@@ -512,6 +517,8 @@ namespace big_num::internal {
         std::span<Integer::value_type> out,
         std::span<Integer::value_type const> in
     ) noexcept -> Integer::value_type {
+        using val_t = Integer::value_type;
+
         if (in.empty()) return {};
         // [a, b, c, d] => [0, a, b, c, d]
 
@@ -524,12 +531,16 @@ namespace big_num::internal {
         }
 
         std::fill_n(out.begin(), blocks, 0);
+        auto result = blocks == 0 ? val_t{} : in[in.size() - blocks];
 
         static constexpr auto rem = Count % MachineConfig::bits;
         if constexpr (rem == 0) {
             std::copy_n(in.begin(), size - blocks, out.begin() + blocks);
-            return {};
+            return result;
         }
+
+        result = in[in.size() - blocks - 1];
+        result &= (1 << rem) - 1;
 
         auto c = MachineConfig::uint_t{};
 
@@ -540,26 +551,33 @@ namespace big_num::internal {
             out[i] = static_cast<MachineConfig::uint_t>(r);
         }
 
-        return c;
+        return result;
     }
 
     inline static constexpr auto shift_left(
         std::span<Integer::value_type> out,
         std::size_t count
     ) noexcept -> Integer::value_type {
+        using val_t = Integer::value_type;
         if (out.empty()) return {};
         // [a, b, c, d] => [0, a, b, c, d]
 
         auto const blocks = count / MachineConfig::bits;
         if (blocks >= out.size()) return {};
+        auto result = blocks == 0 ? val_t{} : out[out.size() - blocks];
+
         std::copy(out.rbegin() + static_cast<std::ptrdiff_t>(blocks), out.rend(), out.rbegin());
         std::fill_n(out.begin(), blocks, 0);
 
         auto const rem = count % MachineConfig::bits;
-        if (rem == 0) return {};
+
+        if (rem == 0) return result;
 
         auto i = std::size_t{blocks};
         auto c = MachineConfig::uint_t{};
+
+        result = out.back();
+        result &= (1 << rem) - 1;
 
         if (!std::is_constant_evaluated()) {
             using simd_t = MachineConfig::simd_uint_t; 
@@ -593,7 +611,7 @@ namespace big_num::internal {
             out[i] = static_cast<MachineConfig::uint_t>(r);
         }
 
-        return c;
+        return result;
     }
 
     inline static constexpr auto shift_left(
@@ -601,6 +619,7 @@ namespace big_num::internal {
         std::span<Integer::value_type const> in,
         std::size_t count
     ) noexcept -> Integer::value_type {
+        using val_t = Integer::value_type;
         if (in.empty()) return {};
         // [a, b, c, d] => [0, a, b, c, d]
 
@@ -612,6 +631,8 @@ namespace big_num::internal {
         std::fill_n(out.begin(), blocks, 0);
 
         auto const rem = count % MachineConfig::bits;
+        auto result = blocks == 0 ? val_t{} : in[in.size() - blocks];
+
         if (rem == 0) {
             std::copy_n(
                 in.begin(),
@@ -621,6 +642,9 @@ namespace big_num::internal {
             return {};
         }
 
+        result = out.back();
+        result &= (1 << rem) - 1;
+
         auto c = Integer::value_type{};
         for (auto i = blocks; i < size; ++i) {
             auto e = in[i];
@@ -629,7 +653,7 @@ namespace big_num::internal {
             out[i] = static_cast<MachineConfig::uint_t>(r);
         }
 
-        return c;
+        return result;
     }
 
     template <bool FixedSize = false>
