@@ -81,19 +81,6 @@ namespace big_num::internal {
         });
     }
 
-    constexpr auto nearest_power_of_2(std::size_t num) noexcept -> std::size_t {
-        if ((num & (num - 1)) == 0) return num;
-        --num;
-        num |= (num >> 1);
-        num |= (num >> 2);
-        num |= (num >> 4);
-        num |= (num >> 8);
-        num |= (num >> 16);
-        num |= (num >> 32);
-        ++num;
-        return num;
-    }
-
     inline static constexpr auto remove_trailing_zeros(
         std::pmr::vector<std::uint8_t>& v
     ) noexcept -> void {
