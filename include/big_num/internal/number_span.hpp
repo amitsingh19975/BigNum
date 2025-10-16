@@ -129,18 +129,19 @@ namespace big_num::internal {
             size_type start,
             size_type size = npos
         ) noexcept -> NumberSpan requires (!std::is_const_v<T>) {
-            auto sz = std::min(size, this->size());
-            sz = std::max(start, sz) - start;
-            return { m_base.data() + start, sz };
+            start = std::min(start, this->size());
+            auto end = std::max(std::min(this->size(), start + size), start);
+            return { m_base.data() + start, end - start };
         }
 
         constexpr auto slice(
             size_type start,
             size_type size = npos
         ) const noexcept -> NumberSpan<std::add_const_t<value_type>> {
-            auto sz = std::min(size, this->size());
-            sz = std::max(start, sz) - start;
-            return { m_base.data() + start, sz };
+            // [...start...sz]
+            start = std::min(start, this->size());
+            auto end = std::max(std::min(this->size(), start + size), start);
+            return { m_base.data() + start, end - start };
         }
 
         constexpr auto abs() const noexcept -> NumberSpan {
