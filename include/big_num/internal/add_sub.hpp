@@ -149,12 +149,11 @@ namespace big_num::internal {
         num_t lhs,
         Integer::value_type rhs
     ) noexcept -> Integer::value_type {
-        if (lhs.empty()) return {};
         auto c = rhs;
         auto i = 0zu;
         while (i < lhs.size() && c) {
             auto [v, tc] = abs_add(lhs[i], c);
-            lhs[i++] = tc;
+            lhs[i++] = v;
             c = tc;
         }
 
@@ -275,7 +274,7 @@ namespace big_num::internal {
         auto i = 0zu;
         while (i < lhs.size() && c) {
             auto [v, tc] = abs_sub(lhs[i], c);
-            lhs[i++] = tc;
+            lhs[i++] = v;
             c = tc;
         }
 
@@ -471,36 +470,6 @@ namespace big_num::internal {
         auto c = sub(o, a, b);
         out.set_neg(o.is_neg());
         out.remove_trailing_empty_blocks();
-        return c;
-    }
-
-    inline static constexpr auto inc(
-        num_t lhs,
-        Integer::value_type val = 1
-    ) noexcept -> num_t::value_type {
-        Integer::value_type c{val};
-        auto i = 0zu;
-        while (i < lhs.size() && c){
-            auto r = lhs[i] + c;
-            auto q = r & MachineConfig::mask;
-            c = r >> MachineConfig::bits;
-            lhs[i++] = static_cast<num_t::value_type>(q);
-        }
-        return c;
-    }
-
-    inline static constexpr auto dec(
-        num_t lhs,
-        Integer::value_type val = 1
-    ) noexcept -> num_t::value_type {
-        Integer::value_type c{val};
-        auto i = 0zu;
-        while (i < lhs.size() && c){
-            auto r = lhs[i] - c;
-            c = lhs[i] < c;
-            auto q = r & MachineConfig::mask;
-            lhs[i++] = static_cast<num_t::value_type>(q);
-        }
         return c;
     }
 } // namespace big_num::internal
