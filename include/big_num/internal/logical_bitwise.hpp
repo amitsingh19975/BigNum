@@ -475,7 +475,7 @@ namespace big_num::internal {
         auto i = std::size_t{blocks};
         auto c = val_t{};
 
-        result &= (1 << rem) - 1;
+        result >>= MachineConfig::bits - rem;
 
         if (!std::is_constant_evaluated()) {
             using simd_t = MachineConfig::simd_uint_t; 
@@ -540,7 +540,7 @@ namespace big_num::internal {
         }
 
         result = in[in.size() - blocks - 1];
-        result &= (1 << rem) - 1;
+        result >>= MachineConfig::bits - rem;
 
         auto c = MachineConfig::uint_t{};
 
@@ -577,7 +577,7 @@ namespace big_num::internal {
         auto c = MachineConfig::uint_t{};
 
         result = out.back();
-        result &= (1 << rem) - 1;
+        result >>= MachineConfig::bits - rem;
 
         if (!std::is_constant_evaluated()) {
             using simd_t = MachineConfig::simd_uint_t; 
@@ -643,7 +643,7 @@ namespace big_num::internal {
         }
 
         result = in[in.size() - blocks - 1];
-        result &= (1 << rem) - 1;
+        result >>= MachineConfig::bits - rem;
 
         auto c = Integer::value_type{};
         for (auto i = blocks; i < size; ++i) {
