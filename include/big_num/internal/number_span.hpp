@@ -129,6 +129,7 @@ namespace big_num::internal {
             size_type start,
             size_type size = npos
         ) noexcept -> NumberSpan requires (!std::is_const_v<T>) {
+            size = std::min(size, this->size());
             start = std::min(start, this->size());
             auto end = std::max(std::min(this->size(), start + size), start);
             return { m_base.data() + start, end - start };
@@ -138,7 +139,7 @@ namespace big_num::internal {
             size_type start,
             size_type size = npos
         ) const noexcept -> NumberSpan<std::add_const_t<value_type>> {
-            // [...start...sz]
+            size = std::min(size, this->size());
             start = std::min(start, this->size());
             auto end = std::max(std::min(this->size(), start + size), start);
             return { m_base.data() + start, end - start };

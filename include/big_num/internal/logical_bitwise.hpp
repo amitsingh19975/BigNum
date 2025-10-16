@@ -639,10 +639,10 @@ namespace big_num::internal {
                 size - blocks,
                 out.begin() + static_cast<std::ptrdiff_t>(blocks)
             );
-            return {};
+            return result;
         }
 
-        result = out.back();
+        result = in[in.size() - blocks - 1];
         result &= (1 << rem) - 1;
 
         auto c = Integer::value_type{};
