@@ -10,6 +10,7 @@ namespace big_num::internal::params {
             unsigned k;
         };
     } // namespace ntt
+
     static constexpr std::array ntt_params = {
         ntt::Param { .n = 1, .k = 2 },
     };

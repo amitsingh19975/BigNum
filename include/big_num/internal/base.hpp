@@ -29,6 +29,7 @@ namespace big_num::internal {
         static constexpr std::size_t bytes = sizeof(uint_t);
         static constexpr std::size_t total_bits = (bytes * CHAR_BIT);
         static constexpr std::size_t bits = total_bits - 1;
+        static constexpr uint_t high_bit = 1zu << (total_bits - 1);
 
         static constexpr acc_t max = acc_t{1} << bits;
         static constexpr acc_t mask = max - 1;
