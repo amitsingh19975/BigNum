@@ -457,6 +457,7 @@ namespace big_num::internal {
     inline static constexpr auto shift_left(
         std::span<Integer::value_type> out
     ) noexcept -> Integer::value_type {
+        using val_t = Integer::value_type;
         if (out.empty()) return {};
         // [a, b, c, d] => [0, a, b, c, d]
 
@@ -469,9 +470,7 @@ namespace big_num::internal {
         if constexpr (rem == 0) return {};
 
         auto i = std::size_t{blocks};
-        auto c = MachineConfig::uint_t{};
-
-        auto mbits = out.back() >> rem;
+        auto c = val_t{};
 
         if (!std::is_constant_evaluated()) {
             using simd_t = MachineConfig::simd_uint_t; 
@@ -505,7 +504,7 @@ namespace big_num::internal {
             out[i] = static_cast<MachineConfig::uint_t>(r);
         }
 
-        return mbits;
+        return c;
     }
 
     template <std::size_t Count>
@@ -534,8 +533,6 @@ namespace big_num::internal {
 
         auto c = MachineConfig::uint_t{};
 
-        auto const last = in.back();
-
         for (auto i = blocks; i < size; ++i) {
             auto e = in[i];
             auto r = ((e << rem) | c) & MachineConfig::mask;
@@ -543,7 +540,7 @@ namespace big_num::internal {
             out[i] = static_cast<MachineConfig::uint_t>(r);
         }
 
-        return last >> rem;
+        return c;
     }
 
     inline static constexpr auto shift_left(
@@ -563,8 +560,6 @@ namespace big_num::internal {
 
         auto i = std::size_t{blocks};
         auto c = MachineConfig::uint_t{};
-
-        auto mbits = out.back() >> rem;
 
         if (!std::is_constant_evaluated()) {
             using simd_t = MachineConfig::simd_uint_t; 
@@ -590,6 +585,7 @@ namespace big_num::internal {
                 c = (p[0] >> (MachineConfig::bits - rem));
             }
         }
+
         for (; i < out.size(); ++i) {
             auto e = out[i];
             auto r = ((e << rem) | c) & MachineConfig::mask;
@@ -597,7 +593,7 @@ namespace big_num::internal {
             out[i] = static_cast<MachineConfig::uint_t>(r);
         }
 
-        return mbits;
+        return c;
     }
 
     inline static constexpr auto shift_left(
@@ -633,7 +629,7 @@ namespace big_num::internal {
             out[i] = static_cast<MachineConfig::uint_t>(r);
         }
 
-        return in.back() >> rem;
+        return c;
     }
 
     template <bool FixedSize = false>
