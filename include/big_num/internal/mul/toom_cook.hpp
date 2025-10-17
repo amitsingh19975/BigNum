@@ -35,14 +35,14 @@ namespace big_num::internal {
             auto const mid = lsz * 2;
 
             auto ll = lhs.slice(0, lsz);
-            auto lm = lhs.slice(lsz, mid);
+            auto lm = lhs.slice(lsz, lsz);
             auto lr = lhs.slice(mid);
 
             auto rl = rhs.slice(0, lsz);
-            auto rm = rhs.slice(lsz, mid);
+            auto rm = rhs.slice(lsz, lsz);
             auto rr = rhs.slice(mid);
 
-            BIG_NUM_TRACE(std::println("lsz: {}, mid: {}, high: {}", lsz, mid, size - mid));
+            BIG_NUM_TRACE(std::println("lsz: {}, mid: {}, high: {}, size: {}", lsz, mid, size - mid, size));
             BIG_NUM_TRACE(std::println("ll: {}\nlm: {}\nlr: {}", ll, lm, lr));
             BIG_NUM_TRACE(std::println("rl: {}\nrm: {}\nrr: {}", rl, rm, rr));
 
