@@ -64,21 +64,27 @@ namespace big_num::internal {
         }
 
         #ifndef BIG_NUM_NAIVE_MUL_THRESHOLD
-        static constexpr std::size_t naive_mul_threshold = 32zu;
+        static constexpr std::size_t naive_mul_threshold = 4zu; // 2^2 limbs
         #else
         static constexpr std::size_t naive_mul_threshold = nearest_even_number(BIG_NUM_NAIVE_MUL_THRESHOLD);
         #endif
 
         #ifndef BIG_NUM_KARATSUBA_THRESHOLD
-        static constexpr std::size_t karatsuba_threshold = 512zu;
+        static constexpr std::size_t karatsuba_threshold = 9zu; // 2^3 limbs
         #else
         static constexpr std::size_t karatsuba_threshold = nearest_even_number(BIG_NUM_KARATSUBA_THRESHOLD);
         #endif
 
         #ifndef BIG_NUM_TOOM_COOK_3_THRESHOLD
-        static constexpr std::size_t toom_cook_3_threshold = 1024zu;
+        static constexpr std::size_t toom_cook_3_threshold = 10zu; // 2^4 limbs
         #else
         static constexpr std::size_t toom_cook_3_threshold = nearest_even_number(BIG_NUM_TOOM_COOK_3_THRESHOLD);
+        #endif
+
+        #ifndef BIG_NUM_NTT_THRESHOLD
+        static constexpr std::size_t ntt_threshold = 12zu; // 2^5 limbs
+        #else
+        static constexpr std::size_t ntt_threshold = nearest_even_number(BIG_NUM_NTT_THRESHOLD);
         #endif
 
         #ifndef BIG_NUM_PARSE_NAIVE_THRESHOLD

@@ -21,14 +21,15 @@ namespace big_num::internal {
             return;
         }
 
-        if (size <= MachineConfig::naive_mul_threshold) {
+        if (size <= (1zu << MachineConfig::naive_mul_threshold)) {
             naive_mul(out, lhs, rhs);
-        } else if (size <= MachineConfig::karatsuba_threshold) {
+        } else if (size <= (1zu << MachineConfig::karatsuba_threshold)) {
             karatsuba_mul(out, lhs, rhs, resource);
-        } else if (size <= MachineConfig::toom_cook_3_threshold) {
+        } else if (size <= (1zu << MachineConfig::toom_cook_3_threshold)) {
             toom_cook_3(out, lhs, rhs, resource);
         } else {
             toom_cook_3(out, lhs, rhs, resource);
+            // fft_mul(out, lhs, rhs, resource);
         }
     }
 
@@ -52,14 +53,15 @@ namespace big_num::internal {
             return;
         }
 
-        if (size <= MachineConfig::naive_mul_threshold) {
+        if (size <= (1zu << MachineConfig::naive_mul_threshold)) {
             naive_mul(out, lhs, rhs);
-        } else if (size <= MachineConfig::karatsuba_threshold) {
+        } else if (size <= (1zu << MachineConfig::karatsuba_threshold)) {
             karatsuba_mul(out, lhs, rhs, resource);
-        } else if (size <= MachineConfig::toom_cook_3_threshold) {
+        } else if (size <= (1zu << MachineConfig::toom_cook_3_threshold)) {
             toom_cook_3(out, lhs, rhs, resource);
         } else {
             toom_cook_3(out, lhs, rhs, resource);
+            // fft_mul(out, lhs, rhs, resource);
         }
     }
 
