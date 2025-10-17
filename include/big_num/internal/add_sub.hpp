@@ -302,7 +302,7 @@ namespace big_num::internal {
         if (lhs.data() != out.data()) {
             std::copy(lhs.begin(), lhs.end(), out.begin());
         }
-        return abs_sub<Take2sComplement>(out, rhs);
+        return abs_sub(out, rhs);
     }
 
     template <bool Take2sComplement = false>
